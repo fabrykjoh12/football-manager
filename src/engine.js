@@ -167,6 +167,53 @@
       injuryRisk: 0.3
     }
   };
+  const SQUAD_ROLES = {
+    star: {
+      label: "Star Player",
+      description: "Expected to start almost every important match.",
+      expectedStartRate: 0.74,
+      expectedMinuteRate: 0.72,
+      wageMultiplier: 1.22,
+      patience: 0.72,
+      order: 5
+    },
+    important: {
+      label: "Important Player",
+      description: "Expected to be a regular starter.",
+      expectedStartRate: 0.58,
+      expectedMinuteRate: 0.56,
+      wageMultiplier: 1.12,
+      patience: 0.82,
+      order: 4
+    },
+    rotation: {
+      label: "Rotation",
+      description: "Expected to rotate into the XI and play steady minutes.",
+      expectedStartRate: 0.34,
+      expectedMinuteRate: 0.36,
+      wageMultiplier: 1,
+      patience: 1,
+      order: 3
+    },
+    prospect: {
+      label: "Prospect",
+      description: "Development role with selective minutes.",
+      expectedStartRate: 0.16,
+      expectedMinuteRate: 0.18,
+      wageMultiplier: 0.86,
+      patience: 1.28,
+      order: 2
+    },
+    backup: {
+      label: "Backup",
+      description: "Depth option with limited minutes expected.",
+      expectedStartRate: 0.1,
+      expectedMinuteRate: 0.12,
+      wageMultiplier: 0.82,
+      patience: 1.4,
+      order: 1
+    }
+  };
   const DEFAULT_TACTICS = {
     mentality: "balanced",
     pressing: "standard",
@@ -424,6 +471,40 @@
   function calculateWage(player) {
     const seniority = player.age > 28 ? 1.12 : player.age < 21 ? 0.78 : 1;
     return moneyRound(Math.pow(player.currentAbility, 2.18) * 5.7 * seniority);
+  }
+
+  function squadRoleLabel(role) {
+    return SQUAD_ROLES[role] ? SQUAD_ROLES[role].label : SQUAD_ROLES.rotation.label;
+  }
+
+  function inferSquadRole(player, club, seedPlayer) {
+    const starts = Number(seedPlayer && seedPlayer.starts || 0);
+    const minutes = Number(seedPlayer && seedPlayer.minutes || 0);
+    const abilityGap = player.currentAbility - (club && club.reputation ? club.reputation : 68);
+    if (player.age <= 21 && player.potential - player.currentAbility >= 9 && player.currentAbility < 76) return "prospect";
+    if (player.currentAbility >= 86 || starts >= 28 || minutes >= 2500 || abilityGap >= 12) return "star";
+    if (player.currentAbility >= 79 || starts >= 20 || minutes >= 1700 || abilityGap >= 6) return "important";
+    if (starts <= 6 && minutes < 700 || player.currentAbility < 60 && player.age > 23) return "backup";
+    return "rotation";
+  }
+
+  function roleExpectation(role) {
+    return SQUAD_ROLES[role] || SQUAD_ROLES.rotation;
+  }
+
+  function roleTone(role) {
+    if (role === "star") return "green";
+    if (role === "important") return "blue";
+    if (role === "prospect") return "amber";
+    if (role === "backup") return "";
+    return "blue";
+  }
+
+  function squadRoleOptions() {
+    return Object.keys(SQUAD_ROLES).map((key) => ({
+      key,
+      ...SQUAD_ROLES[key]
+    }));
   }
 
   function generateAttributes(state, position, targetAbility) {
@@ -734,6 +815,13 @@
       form: [],
       trainingFocus: "balanced",
       individualPlan: "normal",
+      squadRole: "rotation",
+      happiness: {
+        lastConcernDay: -999,
+        lastContractDay: -999,
+        lastPromiseDay: -999
+      },
+      promises: {},
       potential,
       currentAbility,
       attributes,
@@ -749,6 +837,7 @@
       suspension: null
     };
     player.currentAbility = calculateAbilityFromAttributes(player);
+    player.squadRole = inferSquadRole(player, club);
     player.value = calculatePlayerValue(player);
     player.wage = calculateWage(player);
     player.development.push(snapshotDevelopment(player, 1));
@@ -785,6 +874,13 @@
       form: [],
       trainingFocus: "balanced",
       individualPlan: "normal",
+      squadRole: "rotation",
+      happiness: {
+        lastConcernDay: -999,
+        lastContractDay: -999,
+        lastPromiseDay: -999
+      },
+      promises: {},
       potential,
       currentAbility,
       attributes,
@@ -815,6 +911,7 @@
       }
     };
     applyFc26Profile(player, seedPlayer);
+    player.squadRole = inferSquadRole(player, club, seedPlayer);
     player.value = calculatePlayerValue(player);
     player.wage = calculateWage(player);
     player.development.push(snapshotDevelopment(player, 1));
@@ -900,6 +997,8 @@
       goals: 0,
       assists: 0,
       cleanSheets: 0,
+      starts: 0,
+      minutes: 0,
       ratingTotal: 0,
       ratingApps: 0,
       motm: 0,
@@ -1281,6 +1380,14 @@
     player.form = Array.isArray(player.form) ? player.form : [];
     player.secondaryPositions = Array.isArray(player.secondaryPositions) ? player.secondaryPositions : [];
     player.displayName = player.displayName || footballDisplayName(player.name);
+    player.squadRole = SQUAD_ROLES[player.squadRole] ? player.squadRole : inferSquadRole(player, null, player.source);
+    player.happiness = {
+      lastConcernDay: -999,
+      lastContractDay: -999,
+      lastPromiseDay: -999,
+      ...(player.happiness || {})
+    };
+    player.promises = player.promises || {};
     return player;
   }
 
@@ -1602,6 +1709,157 @@
     return { key: "available", label: "Available", tone: "green", detail: `${player.fitness}% fitness` };
   }
 
+  function clubMatchesPlayed(state, clubId) {
+    if (!state || !state.league || !Array.isArray(state.league.schedule)) return 0;
+    return state.league.schedule.reduce((total, roundData) => {
+      return total + (roundData.fixtures || []).filter((fixture) => fixture.played && (fixture.homeClubId === clubId || fixture.awayClubId === clubId)).length;
+    }, 0);
+  }
+
+  function playerPlayingTimeProfile(state, player) {
+    normalizePlayerState(player);
+    const matches = Math.max(0, clubMatchesPlayed(state, player.clubId));
+    const stats = player.seasonStats || freshPlayerStats();
+    const role = roleExpectation(player.squadRole);
+    const starts = Number(stats.starts || 0);
+    const minutes = Number(stats.minutes || 0);
+    const startRate = matches ? starts / matches : 0;
+    const minuteRate = matches ? minutes / Math.max(1, matches * 90) : 0;
+    if (matches < 3) {
+      return {
+        matches,
+        starts,
+        minutes,
+        startRate: round(startRate * 100, 0),
+        minuteRate: round(minuteRate * 100, 0),
+        expectedStartRate: round(role.expectedStartRate * 100, 0),
+        expectedMinuteRate: round(role.expectedMinuteRate * 100, 0),
+        pressure: 0,
+        label: "Early Season",
+        tone: "blue"
+      };
+    }
+    const grace = matches < 5 ? 0.18 : matches < 9 ? 0.08 : 0;
+    const startGap = Math.max(0, role.expectedStartRate - startRate - grace);
+    const minuteGap = Math.max(0, role.expectedMinuteRate - minuteRate - grace);
+    const pressure = round(clamp((startGap * 70 + minuteGap * 62) / role.patience, 0, 100), 0);
+    const label = pressure >= 62 ? "Underplayed" : pressure >= 36 ? "Wants Minutes" : pressure >= 18 ? "Monitor" : "Satisfied";
+    const tone = pressure >= 62 ? "red" : pressure >= 36 ? "amber" : pressure >= 18 ? "blue" : "green";
+    return {
+      matches,
+      starts,
+      minutes,
+      startRate: round(startRate * 100, 0),
+      minuteRate: round(minuteRate * 100, 0),
+      expectedStartRate: round(role.expectedStartRate * 100, 0),
+      expectedMinuteRate: round(role.expectedMinuteRate * 100, 0),
+      pressure,
+      label,
+      tone
+    };
+  }
+
+  function playerPromiseStatus(state, player, playingTime) {
+    const promise = player.promises && player.promises.playingTime;
+    if (!promise || promise.status === "fulfilled" || promise.status === "broken") return null;
+    if (playingTime.pressure <= 16) {
+      return { key: "ready", label: "Promise improving", tone: "green", detail: "Playing-time pressure has eased" };
+    }
+    if (promise.dueDate && compareDates(state.calendar.currentDate, promise.dueDate) > 0) {
+      return { key: "overdue", label: "Promise at risk", tone: "red", detail: `Due ${formatGameDate(promise.dueDate)}` };
+    }
+    return { key: "active", label: "Promise active", tone: "amber", detail: promise.dueDate ? `Review by ${formatGameDate(promise.dueDate)}` : "Review pending" };
+  }
+
+  function playerHappinessReport(state, playerId) {
+    const player = getPlayer(state, playerId);
+    if (!player) return null;
+    const playingTime = playerPlayingTimeProfile(state, player);
+    const recentRating = player.form && player.form.length ? average(player.form) : 6.6;
+    const contractPressure = player.contractYears <= 0 ? 38 : player.contractYears === 1 ? 18 : player.contractYears === 2 ? 6 : 0;
+    const transferPressure = ensureTransferState(state).offers.some((offer) => offer.playerId === player.id && offer.status === "pending") ? 6 : 0;
+    const promiseStatus = playerPromiseStatus(state, player, playingTime);
+    const promisePenalty = promiseStatus && promiseStatus.key === "overdue" ? 16 : promiseStatus && promiseStatus.key === "active" ? 5 : 0;
+    const formLift = clamp((recentRating - 6.6) * 8, -9, 10);
+    const moraleLift = (player.morale - 55) * 0.58;
+    const score = round(clamp(58 + moraleLift + formLift - playingTime.pressure * 0.42 - contractPressure - transferPressure - promisePenalty, 0, 100), 0);
+    const reasons = [];
+    if (playingTime.pressure >= 36) reasons.push(`${playingTime.label}: ${playingTime.starts}/${playingTime.matches} starts`);
+    if (contractPressure >= 18) reasons.push(player.contractYears <= 0 ? "Out of contract" : "Contract expiring");
+    if (promiseStatus) reasons.push(promiseStatus.label);
+    if (transferPressure) reasons.push("Transfer interest");
+    if (player.morale < 42) reasons.push("Low morale");
+    if (recentRating >= 7.2) reasons.push("Strong form");
+    if (!reasons.length) reasons.push("No major concerns");
+    const label = score >= 74 ? "Happy" : score >= 56 ? "Content" : score >= 38 ? "Concerned" : "Unhappy";
+    const tone = score >= 74 ? "green" : score >= 56 ? "blue" : score >= 38 ? "amber" : "red";
+    return {
+      playerId: player.id,
+      score,
+      label,
+      tone,
+      role: player.squadRole,
+      roleLabel: squadRoleLabel(player.squadRole),
+      roleTone: roleTone(player.squadRole),
+      playingTime,
+      contractPressure,
+      promiseStatus,
+      reasons
+    };
+  }
+
+  function squadHappinessReport(state, clubId) {
+    const squad = clubPlayers(state, clubId);
+    const rows = squad.map((player) => ({ player, happiness: playerHappinessReport(state, player.id) })).filter((item) => item.happiness);
+    const averageScore = round(average(rows.map((item) => item.happiness.score)), 0);
+    const tone = averageScore >= 74 ? "green" : averageScore >= 56 ? "blue" : averageScore >= 38 ? "amber" : "red";
+    return {
+      averageScore,
+      tone,
+      unhappy: rows
+        .filter((item) => item.happiness.score < 48 || item.happiness.playingTime.pressure >= 42)
+        .sort((a, b) => a.happiness.score - b.happiness.score || b.happiness.playingTime.pressure - a.happiness.playingTime.pressure)
+        .slice(0, 6),
+      expiring: rows
+        .filter((item) => item.player.contractYears <= 1)
+        .sort((a, b) => b.player.currentAbility - a.player.currentAbility)
+        .slice(0, 6),
+      promises: rows.filter((item) => item.player.promises && item.player.promises.playingTime && item.player.promises.playingTime.status === "active").length
+    };
+  }
+
+  function contractRenewalProfile(state, playerId) {
+    const player = getPlayer(state, playerId);
+    const club = player ? getClub(state, player.clubId) : null;
+    if (!player || !club) return null;
+    const happiness = playerHappinessReport(state, player.id);
+    const role = roleExpectation(player.squadRole);
+    const years = player.age >= 32 ? 2 : player.age >= 29 ? 3 : player.squadRole === "star" || player.squadRole === "important" || player.squadRole === "prospect" ? 4 : 3;
+    const expiringLift = player.contractYears <= 0 ? 1.28 : player.contractYears === 1 ? 1.16 : player.contractYears === 2 ? 1.08 : 1.02;
+    const happinessLift = happiness.score < 36 ? 1.22 : happiness.score < 52 ? 1.12 : happiness.score >= 74 ? 0.98 : 1.04;
+    const demandWage = moneyRound(Math.max(player.wage * expiringLift * happinessLift, calculateWage(player) * role.wageMultiplier));
+    const wageRoom = Math.max(0, club.wageBudget - (weeklyWageSpend(state, club.id) - player.wage));
+    const interest = round(clamp(42 + happiness.score * 0.48 + (player.contractYears <= 1 ? 8 : 0) - (happiness.playingTime.pressure >= 54 ? 14 : 0), 0, 100), 0);
+    const warnings = [];
+    if (demandWage > wageRoom) warnings.push("Wage budget stretch");
+    if (happiness.playingTime.pressure >= 54) warnings.push("Playing-time promise expected");
+    if (happiness.score < 38) warnings.push("Player happiness is low");
+    if (player.age >= 32 && years > 2) warnings.push("Veteran contract length risk");
+    const label = interest >= 72 ? "Willing" : interest >= 50 ? "Negotiable" : interest >= 30 ? "Needs Convincing" : "Reluctant";
+    const tone = interest >= 72 ? "green" : interest >= 50 ? "blue" : interest >= 30 ? "amber" : "red";
+    return {
+      playerId: player.id,
+      years,
+      requestedWage: demandWage,
+      wageRoom,
+      interest,
+      label,
+      tone,
+      happiness,
+      warnings
+    };
+  }
+
   function availabilityLabel(state, player) {
     return playerAvailabilityStatus(state, player).label;
   }
@@ -1900,6 +2158,14 @@
       player.careerTotals.apps += 1;
       player.careerTotals.ratingTotal += rating.rating;
       player.careerTotals.ratingApps += 1;
+      const started = rating.started !== false;
+      const minutesPlayed = Number.isFinite(rating.minutes) ? rating.minutes : started ? 90 : 0;
+      if (started) {
+        player.seasonStats.starts += 1;
+        player.careerTotals.starts += 1;
+      }
+      addPlayerStat(player.seasonStats, "minutes", minutesPlayed);
+      addPlayerStat(player.careerTotals, "minutes", minutesPlayed);
       const matchStats = fixture.playerStats && fixture.playerStats[player.id] ? fixture.playerStats[player.id] : null;
       if (matchStats) {
         addPlayerStat(player.seasonStats, "yellows", matchStats.yellowCards);
@@ -2512,6 +2778,61 @@
     return { type: "knock", title: "Minor Knock", playerId: player.id };
   }
 
+  function processSquadHappinessDaily(state) {
+    const club = getClub(state, state.activeClubId);
+    if (!club || !state.calendar) return null;
+    const day = state.calendar.day || 1;
+    let event = null;
+    const squad = clubPlayers(state, club.id);
+    squad.forEach((player) => {
+      normalizePlayerState(player);
+      const report = playerHappinessReport(state, player.id);
+      if (!report) return;
+      const promise = player.promises.playingTime;
+      if (promise && promise.status === "active") {
+        if (report.playingTime.pressure <= 16) {
+          promise.status = "fulfilled";
+          player.morale = Math.round(clamp(player.morale + randomInt(state, 3, 8), 0, 100));
+          if (!event) {
+            addInbox(state, "Promise Kept", `${player.name} is happier with their recent playing time.`);
+            event = { type: "promise", title: "Promise Kept", playerId: player.id };
+          }
+        } else if (promise.dueDate && compareDates(state.calendar.currentDate, promise.dueDate) > 0) {
+          promise.status = "broken";
+          player.morale = Math.round(clamp(player.morale - randomInt(state, 8, 15), 0, 100));
+          if (!event) {
+            addInbox(state, "Promise Broken", `${player.name} feels their playing-time promise has not been met.`);
+            event = { type: "promise", title: "Promise Broken", playerId: player.id };
+          }
+        }
+      }
+
+      if (!event && report.playingTime.matches >= 6 && report.playingTime.pressure >= 54 && day - (player.happiness.lastConcernDay || -999) >= 22) {
+        player.happiness.lastConcernDay = day;
+        player.happiness.lastPromiseDay = day;
+        player.promises.playingTime = {
+          status: "active",
+          createdDate: state.calendar.currentDate,
+          dueDate: addDays(state.calendar.currentDate, 28),
+          role: player.squadRole,
+          expectedStartRate: roleExpectation(player.squadRole).expectedStartRate
+        };
+        player.morale = Math.round(clamp(player.morale - randomInt(state, 4, 9), 0, 100));
+        addInbox(state, "Playing-Time Concern", `${player.name} expects more starts as a ${squadRoleLabel(player.squadRole)}. Staff will review the next month.`);
+        event = { type: "happiness", title: "Playing-Time Concern", playerId: player.id };
+      }
+
+      if (!event && player.contractYears <= 1 && report.score < 64 && player.currentAbility >= club.reputation - 4 && day - (player.happiness.lastContractDay || -999) >= 28 && random(state) < 0.2) {
+        player.happiness.lastContractDay = day;
+        player.morale = Math.round(clamp(player.morale - randomInt(state, 2, 6), 0, 100));
+        const renewal = contractRenewalProfile(state, player.id);
+        addInbox(state, "Contract Demand", `${player.name}'s agent wants talks. Early demand: ${formatMoney(renewal.requestedWage)} per week for ${renewal.years} years.`);
+        event = { type: "contract", title: "Contract Demand", playerId: player.id };
+      }
+    });
+    return event;
+  }
+
   function simulateFixturesForDate(state, date) {
     const dueRounds = state.league.schedule.filter((roundData) => {
       const hasUnplayed = roundData.fixtures.some((fixture) => !fixture.played);
@@ -2561,7 +2882,8 @@
     const offer = maybeGenerateDailyAiOffer(state);
     const aiMarketMove = maybeProcessDailyAiClubTransfer(state);
     const matchday = simulateFixturesForDate(state, processedDate);
-    if (clubEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
+    const happinessEvent = processSquadHappinessDaily(state);
+    if (clubEvent || happinessEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
 
     let seasonEnded = false;
     let seasonSummary = null;
@@ -2582,6 +2904,7 @@
       activeMatch: matchday.activeMatch,
       matchday: matchday.fixtures.length > 0,
       clubEvent,
+      happinessEvent,
       offer,
       aiMarketMove,
       seasonEnded,
@@ -2606,7 +2929,7 @@
   function describeDayEvent(state, before, result) {
     if (result.activeMatch) return { type: "match", title: "Matchday", body: "The next match is ready." };
     if (result.seasonEnded) return { type: "season", title: "Season Complete", body: result.seasonSummary ? `${result.seasonSummary.championName} won the league.` : "The season has finished." };
-    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
+    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.happinessEvent ? { type: result.happinessEvent.type, title: result.happinessEvent.title } : null) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
   }
 
   function simulateUntilNextEvent(state, options) {
@@ -2908,6 +3231,29 @@
     return { ok: true, message: `${player.name} moved to ${individualPlanLabel(plan)}.` };
   }
 
+  function setSquadRole(state, playerId, role) {
+    const player = getPlayer(state, playerId);
+    if (!player || !SQUAD_ROLES[role]) return { ok: false, message: "Squad role unavailable." };
+    if (player.clubId !== state.activeClubId) return { ok: false, message: "You can only manage your own players." };
+    const previous = player.squadRole;
+    if (previous === role) return { ok: true, message: `${player.name} is already ${squadRoleLabel(role)}.` };
+    const oldOrder = roleExpectation(previous).order;
+    const newOrder = roleExpectation(role).order;
+    player.squadRole = role;
+    if (newOrder > oldOrder) {
+      player.morale = Math.round(clamp(player.morale + 5 + (newOrder - oldOrder), 0, 100));
+      if (player.promises && player.promises.playingTime && player.promises.playingTime.status === "active") {
+        player.promises.playingTime.role = role;
+      }
+      return { ok: true, message: `${player.name} promoted to ${squadRoleLabel(role)}.` };
+    }
+    player.morale = Math.round(clamp(player.morale - Math.max(2, (oldOrder - newOrder) * 4), 0, 100));
+    if (player.promises && player.promises.playingTime && player.promises.playingTime.status === "active" && roleExpectation(role).expectedStartRate <= roleExpectation(previous).expectedStartRate * 0.72) {
+      player.promises.playingTime.status = "reset";
+    }
+    return { ok: true, message: `${player.name}'s role changed to ${squadRoleLabel(role)}.` };
+  }
+
   function restPlayer(state, playerId) {
     const player = getPlayer(state, playerId);
     if (!player) return { ok: false, message: "Player not found." };
@@ -2959,6 +3305,7 @@
       playerId: player.id,
       availability: playerAvailabilityStatus(state, player),
       risk: injuryRiskLevel(state, player),
+      happiness: playerHappinessReport(state, player.id),
       individualPlan: player.individualPlan,
       growthRoom,
       progress,
@@ -4218,6 +4565,10 @@
     }
     player.wage = wage;
     player.contractYears = Math.max(player.contractYears, randomInt(state, 3, 5));
+    player.squadRole = inferSquadRole(player, toClub);
+    player.promises = {};
+    player.happiness = { ...player.happiness, lastConcernDay: -999, lastContractDay: -999, lastPromiseDay: -999 };
+    player.morale = Math.round(clamp(Math.max(player.morale, 58) + randomInt(state, 1, 6), 0, 100));
     player.value = calculatePlayerValue(player);
     player.loanUntilSeason = null;
     player.parentClubId = null;
@@ -4276,6 +4627,9 @@
     player.clubId = club.id;
     player.wage = requestedWage;
     player.contractYears = randomInt(state, 2, 4);
+    player.squadRole = inferSquadRole(player, club);
+    player.promises = {};
+    player.morale = Math.round(clamp(Math.max(player.morale, 56) + randomInt(state, 0, 5), 0, 100));
     state.transfers.freeAgentIds = (state.transfers.freeAgentIds || []).filter((id) => id !== player.id);
     repairMatchdaySquad(state, club.id);
     recordTransfer(state, {
@@ -4298,15 +4652,24 @@
     const player = getPlayer(state, playerId);
     const club = player ? getClub(state, player.clubId) : null;
     if (!player || !club || club.id !== state.activeClubId) return { ok: false, message: "Contract cannot be renewed." };
-    const years = player.age >= 31 ? 2 : randomInt(state, 3, 5);
-    const wageLift = player.contractYears <= 0 ? 1.28 : player.contractYears === 1 ? 1.16 : 1.08;
-    const newWage = moneyRound(player.wage * wageLift + player.currentAbility * 650);
+    const profile = contractRenewalProfile(state, player.id);
+    if (!profile) return { ok: false, message: "Contract profile unavailable." };
+    if (profile.interest < 25) {
+      player.morale = Math.round(clamp(player.morale - 4, 0, 100));
+      addInbox(state, "Contract Talks Stalled", `${player.name}'s camp is reluctant to renew because of ${profile.happiness.reasons[0].toLowerCase()}.`);
+      return { ok: false, message: `${player.name} is reluctant to renew right now.` };
+    }
+    const years = profile.years;
+    const newWage = profile.requestedWage;
     const currentSpend = weeklyWageSpend(state, club.id) - player.wage;
     if (currentSpend + newWage > club.wageBudget) return { ok: false, message: "Wage budget is too low for the renewal." };
     player.wage = newWage;
     player.contractYears = years;
     player.morale = Math.round(clamp(player.morale + randomInt(state, 4, 10), 0, 100));
-    addInbox(state, "Contract Renewed", `${player.name} signed a ${years}-year deal worth ${formatMoney(newWage)} per week.`);
+    if (player.promises && player.promises.playingTime && player.promises.playingTime.status === "active" && profile.happiness.playingTime.pressure < 36) {
+      player.promises.playingTime.status = "fulfilled";
+    }
+    addInbox(state, "Contract Renewed", `${player.name} signed a ${years}-year deal worth ${formatMoney(newWage)} per week. ${profile.warnings[0] || profile.label}.`);
     return { ok: true, message: `${player.name} renewed for ${years} seasons.` };
   }
 
@@ -4511,11 +4874,17 @@
     TRAINING_PLANS,
     MATCH_PREP,
     INDIVIDUAL_PLANS,
+    SQUAD_ROLES,
     DEFAULT_TACTICS,
     trainingFocusLabel,
     trainingPlanLabel,
     matchPrepLabel,
     individualPlanLabel,
+    squadRoleLabel,
+    squadRoleOptions,
+    playerHappinessReport,
+    squadHappinessReport,
+    contractRenewalProfile,
     transferWindowStatus,
     processTransferPreAgreements,
     getNextFixture,
@@ -4561,6 +4930,7 @@
     processScoutingAssignments,
     getScoutView,
     setTrainingFocus,
+    setSquadRole,
     makeTransferOffer,
     loanPlayer,
     renewContract,

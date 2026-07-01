@@ -352,6 +352,7 @@
     if (selected && selected.clubId === club.id) ui.selectedPlayerId = selected.id;
     const availability = Engine.squadAvailabilityReport(state, club.id);
     const development = Engine.squadDevelopmentReport(state, club.id);
+    const happiness = Engine.squadHappinessReport(state, club.id);
 
     return `
       <div class="grid four">
@@ -359,10 +360,12 @@
         ${metric("Injured", availability.injured, `${availability.suspended} suspended`)}
         ${metric("Fitness Watch", availability.lowFitness + availability.doubtful, `${availability.highRisk} high risk`)}
         ${metric("Prospects", development.prospects.length, `${development.risers.length} improving`)}
+        ${metric("Happiness", `${happiness.averageScore}/100`, `${happiness.unhappy.length} concerns | ${happiness.promises} promises`)}
       </div>
       <div class="squad-insights">
         ${renderAvailabilityWatch(availability)}
         ${renderDevelopmentWatch(development)}
+        ${renderHappinessWatch(happiness)}
       </div>
       ${renderPlayerToolbar("squad")}
       <div class="grid ${selected ? "two" : ""}">
@@ -423,6 +426,31 @@
             `).join("")}
           </div>
         ` : `<div class="empty-state">No development movement yet.</div>`}
+      </div>
+    `;
+  }
+
+  function renderHappinessWatch(report) {
+    const rows = report.unhappy.length ? report.unhappy : report.expiring;
+    return `
+      <div class="panel">
+        <div class="ratings-heading">
+          <h2 class="panel-title">Happiness Watch</h2>
+          <span class="pill ${report.tone}">${report.averageScore}/100</span>
+        </div>
+        ${rows.length ? `
+          <div class="watch-list">
+            ${rows.slice(0, 5).map((row) => `
+              <button class="watch-item" data-action="view-player" data-player-id="${escapeAttr(row.player.id)}">
+                <span>
+                  <strong title="${escapeAttr(row.player.name)}">${escapeHtml(displayPlayerName(row.player))}</strong>
+                  <small>${escapeHtml(row.happiness.roleLabel)} | ${escapeHtml(row.happiness.reasons[0])}</small>
+                </span>
+                <em class="badge ${row.happiness.tone}">${escapeHtml(row.happiness.label)}</em>
+              </button>
+            `).join("")}
+          </div>
+        ` : `<div class="empty-state">No happiness or contract pressure right now.</div>`}
       </div>
     `;
   }
@@ -1254,19 +1282,22 @@
         <table>
           <thead>
             <tr>
-              <th>Player</th><th>Pos</th><th>Age</th><th>Status</th><th>CA</th><th>PA</th><th>Dev</th><th>Value</th><th>Wage</th><th>Contract</th><th>Fitness</th><th>Sharp</th><th>Risk</th><th>Form</th><th></th>
+              <th>Player</th><th>Pos</th><th>Age</th><th>Status</th><th>Role</th><th>Happy</th><th>CA</th><th>PA</th><th>Dev</th><th>Value</th><th>Wage</th><th>Contract</th><th>Fitness</th><th>Sharp</th><th>Risk</th><th>Form</th><th></th>
             </tr>
           </thead>
           <tbody>
             ${players.map((player) => {
               const report = context === "squad" ? Engine.playerDevelopmentReport(state, player.id) : null;
               const risk = report ? report.risk : Engine.injuryRiskLevel(state, player);
+              const happiness = report ? report.happiness : Engine.playerHappinessReport(state, player.id);
               return `
                 <tr class="${ui.selectedPlayerId === player.id ? "highlight" : ""}">
                   <td>${playerNameButton(player)}</td>
                   <td>${positionBadge(player.position)}</td>
                   <td>${player.age}</td>
                   <td>${statusBadge(player)}</td>
+                  <td><span class="badge ${happiness.roleTone}">${escapeHtml(happiness.roleLabel)}</span></td>
+                  <td><span class="badge ${happiness.tone}">${happiness.score}</span></td>
                   <td>${player.currentAbility}</td>
                   <td>${player.potential}</td>
                   <td>${context === "squad" ? `<span class="badge ${report.delta > 0 ? "green" : report.delta < 0 ? "amber" : "blue"}">${developmentDeltaLabel(report.delta)}</span>` : "-"}</td>
@@ -1375,6 +1406,8 @@
     const report = Engine.playerDevelopmentReport(state, player.id);
     const availability = report.availability;
     const risk = report.risk;
+    const happiness = report.happiness;
+    const renewal = Engine.contractRenewalProfile(state, player.id);
     const fc26 = Engine.fc26StyleStats(player);
     const isOwnPlayer = player.clubId === state.activeClubId;
     return `
@@ -1392,11 +1425,19 @@
             ${metric("Age", player.age, `${report.stage} | ${player.weight} kg`)}
             ${metric("Ability", `${player.currentAbility} / ${player.potential}`, "Current / Potential")}
             ${metric("Development", developmentDeltaLabel(report.delta), `${report.growthRoom} growth room`)}
+            ${metric("Role", happiness.roleLabel, happiness.playingTime.label)}
+            ${metric("Happiness", `${happiness.score}/100`, happiness.reasons[0])}
             ${metric("Fitness", `${player.fitness}%`, `${player.sharpness}% sharpness`)}
             ${metric("Risk", risk.label, risk.detail)}
           </div>
           ${fc26 ? renderFc26Stats(fc26) : ""}
           ${isOwnPlayer ? `<div class="player-management-grid">
+            <div class="field">
+              <label for="squad-role">Squad Role</label>
+              <select id="squad-role" data-action="set-squad-role" data-player-id="${player.id}">
+                ${Engine.squadRoleOptions().map((role) => `<option value="${role.key}" ${player.squadRole === role.key ? "selected" : ""}>${escapeHtml(role.label)}</option>`).join("")}
+              </select>
+            </div>
             <div class="field">
               <label for="training-focus">Training Focus</label>
               <select id="training-focus" data-action="set-training-focus" data-player-id="${player.id}">
@@ -1410,6 +1451,7 @@
               </select>
             </div>
             <button class="btn-primary" data-action="rest-player" data-player-id="${player.id}">Rest / Rehab</button>
+            ${renewal ? `<button class="btn-compact" data-action="renew-contract" data-player-id="${player.id}">Renew Contract</button>` : ""}
           </div>` : ""}
           <div class="progress-list player-stat-row">
             ${progressCard("Apps", stats.apps)}
@@ -1417,6 +1459,16 @@
             ${progressCard("Assists", stats.assists)}
           </div>
           <div class="profile-card-grid">
+            <div class="profile-card">
+              <strong>Happiness</strong>
+              <span>${escapeHtml(happiness.label)} | ${escapeHtml(happiness.reasons[0])}</span>
+              ${bar(happiness.score, happiness.score >= 74 ? "green" : happiness.score >= 56 ? "blue" : happiness.score >= 38 ? "amber" : "red")}
+            </div>
+            <div class="profile-card">
+              <strong>Playing Time</strong>
+              <span>${happiness.playingTime.starts}/${happiness.playingTime.matches} starts | ${happiness.playingTime.minutes} mins</span>
+              ${bar(100 - happiness.playingTime.pressure, happiness.playingTime.pressure >= 54 ? "red" : happiness.playingTime.pressure >= 28 ? "amber" : "green")}
+            </div>
             <div class="profile-card">
               <strong>Availability</strong>
               <span>${escapeHtml(availability.detail)}</span>
@@ -1428,6 +1480,7 @@
               ${bar(report.progress, report.progress > 86 ? "green" : report.progress > 68 ? "amber" : "red")}
             </div>
           </div>
+          ${renewal ? renderContractProfile(renewal, player) : ""}
           ${player.source && player.source.provider ? renderSourceStats(player.source) : ""}
           <h3 class="panel-title" style="margin-top:14px">Development</h3>
           ${report.events.length ? `
@@ -1511,6 +1564,23 @@
           ${items.map(([label, value]) => `
             <span><strong>${Number.isFinite(value) ? value : "-"}</strong>${label}</span>
           `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderContractProfile(profile, player) {
+    return `
+      <div class="contract-profile">
+        <div class="ratings-heading">
+          <h3 class="panel-title">Contract Mood</h3>
+          <span class="badge ${profile.tone}">${escapeHtml(profile.label)}</span>
+        </div>
+        <div class="metric-grid">
+          ${metric("Demand", Engine.formatMoney(profile.requestedWage), `${profile.years} year${profile.years === 1 ? "" : "s"}`)}
+          ${metric("Current Wage", Engine.formatMoney(player.wage), `${player.contractYears} season${player.contractYears === 1 ? "" : "s"} left`)}
+          ${metric("Interest", `${profile.interest}/100`, profile.happiness.reasons[0])}
+          ${metric("Wage Room", Engine.formatMoney(profile.wageRoom), profile.warnings[0] || "No major blockers")}
         </div>
       </div>
     `;
@@ -2490,6 +2560,13 @@
     }
     if (target.dataset.action === "set-training-focus") {
       const result = Engine.setTrainingFocus(state, target.dataset.playerId, target.value);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (target.dataset.action === "set-squad-role") {
+      const result = Engine.setSquadRole(state, target.dataset.playerId, target.value);
       Storage.save(state);
       toast(result.message, result.ok ? "good" : "bad");
       render();

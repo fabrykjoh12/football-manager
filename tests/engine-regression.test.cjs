@@ -69,6 +69,12 @@ function run() {
   assert.equal(sakaFc26.matched, true, "Matched players should keep FC26 rating metadata");
   assert.equal(sakaFc26.ovr, 88, "FC26-style stats should expose overall rating");
   assert.equal(sakaFc26.pac, 84, "FC26-style stats should expose pace rating");
+  assert.equal(saka.squadRole, "star", "Elite real-world starters should receive star-player roles");
+  assert.ok(Engine.playerHappinessReport(save, saka.id).score >= 50, "Early-season happiness should not punish players before matches are played");
+  const roleChange = Engine.setSquadRole(save, saka.id, "important");
+  assert.equal(roleChange.ok, true, "Squad roles should be editable for own players");
+  assert.equal(saka.squadRole, "important", "Squad role changes should persist");
+  Engine.setSquadRole(save, saka.id, "star");
   const legacySave = Engine.cloneState(save);
   legacySave.version = "1.2.0";
   delete legacySave.league.clubs[0].tactics;
@@ -115,6 +121,9 @@ function run() {
   const renewal = Engine.renewContract(save, expiringPlayer.id);
   assert.equal(renewal.ok, true, "Contract renewal should succeed for own player when wage room exists");
   assert.ok(expiringPlayer.contractYears >= 2, "Renewal should extend the contract");
+  const renewalProfile = Engine.contractRenewalProfile(save, expiringPlayer.id);
+  assert.ok(renewalProfile.requestedWage >= expiringPlayer.wage * 0.75, "Renewal profile should include a realistic wage demand");
+  assert.ok(renewalProfile.happiness, "Renewal profile should include happiness context");
 
   const trainingPlayer = Engine.clubPlayers(save, save.activeClubId)[1];
   const training = Engine.setTrainingFocus(save, trainingPlayer.id, "playmaking");
@@ -171,6 +180,22 @@ function run() {
   assert.ok(eventFlow.daysAdvanced >= 1, "Continue flow should advance at least one day");
   assert.equal(eventFlow.days.length, eventFlow.daysAdvanced, "Continue flow should report all simulated days");
   assert.ok(eventFlow.activeMatch || eventFlow.significantEvent || eventFlow.seasonEnded, "Continue flow should stop at a match, event, or season end");
+  const promiseSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 4242 });
+  const promiseClub = Engine.getClub(promiseSave, promiseSave.activeClubId);
+  const promisedPlayer = Engine.clubPlayers(promiseSave, promiseSave.activeClubId).find((player) => player.squadRole === "star") || Engine.clubPlayers(promiseSave, promiseSave.activeClubId)[0];
+  promisedPlayer.squadRole = "star";
+  let markedMatches = 0;
+  promiseSave.league.schedule.forEach((roundData) => {
+    const fixture = roundData.fixtures.find((item) => item.homeClubId === promiseClub.id || item.awayClubId === promiseClub.id);
+    if (fixture && markedMatches < 6) {
+      fixture.played = true;
+      markedMatches += 1;
+    }
+  });
+  const promisePressure = Engine.playerHappinessReport(promiseSave, promisedPlayer.id);
+  assert.ok(promisePressure.playingTime.pressure >= 54, "Underplayed star players should create playing-time pressure");
+  const promiseDay = Engine.simulateNextDay(promiseSave);
+  assert.ok(promiseDay.happinessEvent || promiseSave.inbox.some((item) => item.title === "Playing-Time Concern"), "Daily progression should surface playing-time concerns");
 
   const recoverySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 8888 });
   const physicalSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 8888 });
@@ -248,6 +273,10 @@ function run() {
   assert.ok(roundResult.activeMatch.tactics, "Played matches should store tactic snapshots");
   assert.ok(roundResult.activeMatch.events.length > 0, "Deep match engine should return structured events");
   assert.ok(roundResult.activeMatch.playerStats, "Deep match engine should return player match stats");
+  const activeRating = roundResult.activeMatch.playerRatings.find((rating) => rating.clubId === save.activeClubId);
+  const activeRatedPlayer = activeRating ? Engine.getPlayer(save, activeRating.playerId) : null;
+  assert.ok(activeRatedPlayer && activeRatedPlayer.seasonStats.minutes > 0, "Match appearances should track minutes for morale promises");
+  assert.ok(activeRatedPlayer.seasonStats.starts >= 0, "Match appearances should track starts for squad-role expectations");
   assert.ok(Array.isArray(roundResult.activeMatch.substitutions), "Deep match engine should return substitutions");
   assert.ok(roundResult.activeMatch.analysis.summary, "Deep match engine should explain the result");
   assert.ok(roundResult.activeMatch.stats.passAccuracy.home >= 55, "Tactics should preserve plausible passing stats");

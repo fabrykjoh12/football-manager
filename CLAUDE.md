@@ -122,6 +122,17 @@ Design target:
 - Auto lineup/bench excludes unavailable players.
 - Squad screen includes availability watch, development watch, filters, risk badges, sharpness, and development delta.
 
+### Contracts + Morale
+
+- Squad roles: Star Player, Important Player, Rotation, Prospect, and Backup.
+- Real-world starters are seeded into realistic squad roles, and old saves backfill roles safely.
+- Match stats now track starts and minutes for playing-time expectations.
+- Player happiness combines morale, role expectations, starts/minutes, contract status, form, active promises, and transfer interest.
+- Squad screen now includes a happiness watch panel, role/happiness table columns, and average happiness metric.
+- Player profiles show happiness, playing-time pressure, role controls, contract mood, wage demands, and renewal interest.
+- Daily progression can surface Playing-Time Concern, Promise Kept, Promise Broken, and Contract Demand inbox stories.
+- Contract renewals now use a renewal profile with role, happiness, playing-time pressure, wage-room checks, and negotiation warnings.
+
 ### Recruitment Centre + Shortlist
 
 - Recruitment centre on the Transfers screen.
@@ -190,19 +201,19 @@ Design target:
 - `4137c9d` Expand AI loan market and transfer news
 - `686b64e` Improve calendar flow and player profiles
 
-The latest completed feature phase is FC26 Ratings + Player Profiles.
+The latest completed feature phase is Contracts + Morale.
 
 ## Current Roadmap
 
-### Next Phase: Contracts + Morale
+### Next Phase: Youth Academy + Scouting Network
 
 Planned work:
 
-- Contract expiry market opportunities.
-- Player morale and playing-time promises.
-- Richer player contract negotiation reasons.
-- Squad happiness affected by minutes, role, results, injuries, and transfer speculation.
-- Inbox stories for unhappy players, expiring contracts, and promise pressure.
+- Youth academy squad and intake generation.
+- Youth player development plans.
+- Scouting network regions and scout assignments.
+- Discovery pipeline from unknown prospects to reports.
+- Inbox stories for academy standouts, scout finds, and development milestones.
 
 ### Later Phases
 
