@@ -59,6 +59,8 @@ function run() {
   assert.equal(save.league.schedule[0].fixtures.length, 10, "Each round should contain 10 fixtures");
   assert.ok(save.calendar.currentDate, "New saves should include a current calendar date");
   assert.ok(Array.isArray(save.transfers.news), "New saves should include a transfer news feed");
+  assert.ok(save.academy && save.academy.prospects.length >= 8, "New saves should start with an academy group");
+  assert.ok(Engine.academyReport(save).prospects.length >= 8, "Academy reports should expose prospects");
   assert.ok(save.league.schedule[0].date, "Rounds should have match dates");
   assert.equal(save.league.schedule[0].fixtures[0].date, save.league.schedule[0].date, "Fixtures should inherit round dates");
   const saka = Object.values(save.players).find((player) => player.name === "Bukayo Saka");
@@ -78,7 +80,18 @@ function run() {
   const legacySave = Engine.cloneState(save);
   legacySave.version = "1.2.0";
   delete legacySave.league.clubs[0].tactics;
-  assert.equal(Engine.migrateState(legacySave).league.clubs[0].tactics.focus, "mixed", "Migration should backfill club tactics");
+  const migratedLegacy = Engine.migrateState(legacySave);
+  assert.equal(migratedLegacy.league.clubs[0].tactics.focus, "mixed", "Migration should backfill club tactics");
+  assert.ok(migratedLegacy.academy.prospects.length > 0, "Migration should backfill academy state");
+
+  const academySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 3030 });
+  const academyProspect = Engine.academyReport(academySave).prospects[0].prospect;
+  assert.equal(Engine.setAcademyPlan(academySave, academyProspect.id, "technical").ok, true, "Academy plans should be editable");
+  assert.equal(academyProspect.trainingPlan, "technical", "Academy plan changes should persist");
+  const promotion = Engine.promoteAcademyProspect(academySave, academyProspect.id);
+  assert.equal(promotion.ok, true, "Academy prospects should be promotable");
+  assert.ok(Engine.getClub(academySave, academySave.activeClubId).squad.includes(promotion.playerId), "Promoted academy players should join the senior squad");
+  assert.equal(Engine.getPlayer(academySave, promotion.playerId).squadRole, "prospect", "Promoted academy players should join as prospects");
 
   const activeClub = Engine.getClub(save, save.activeClubId);
   assert.equal(activeClub.tactics.mentality, "balanced", "New saves should include default tactics");
@@ -159,6 +172,18 @@ function run() {
   assert.equal(Engine.isShortlisted(save, recommendations[0].player.id), true, "Shortlist status should persist");
   assert.ok(Engine.recruitmentProfile(save, recommendations[0].player.id).pros.length > 0, "Recruitment profile should include pros");
   assert.equal(Engine.removeFromShortlist(save, recommendations[0].player.id).ok, true, "Targets should be removable from shortlist");
+
+  const networkSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 9090 });
+  const regionalAssignment = Engine.assignRegionalScout(networkSave, "scandinavia", "prospects");
+  assert.equal(regionalAssignment.ok, true, "Regional scouting assignments should be startable");
+  for (let i = 0; i < 18; i += 1) {
+    Engine.simulateNextDay(networkSave);
+  }
+  const networkReport = Engine.scoutingNetworkReport(networkSave);
+  assert.ok(networkReport.discoveries.length > 0, "Regional scouting should discover unknown targets");
+  const discovered = networkReport.discoveries[0].player;
+  assert.ok(discovered && !discovered.clubId, "Scouting discoveries should enter the game as unsigned targets");
+  assert.ok(networkSave.transfers.marketIds.includes(discovered.id), "Scouting discoveries should appear in the transfer market");
 
   const dailySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 7777 });
   const dailyClub = Engine.getClub(dailySave, dailySave.activeClubId);

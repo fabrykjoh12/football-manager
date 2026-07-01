@@ -191,6 +191,21 @@ Design target:
 - Transfer news labels now distinguish bids, failed bids, loan rumors, and deadline stories.
 - Regression tests cover AI loan movement, parent-club tracking, loan history, and loan news.
 
+### Youth Academy + Scouting Network
+
+- New saves and migrated saves now include an academy group without changing the senior Premier League player count.
+- Academy prospects have age, nationality, position, CA/PA, attributes, morale, fitness, development events, and individual academy plans.
+- Academy plans include Balanced, Technical, Athletic, Playmaker, Finishing, and Defensive development routes.
+- Daily progression can improve academy attributes and create Academy Standout or Academy Development inbox stories.
+- Season rollover ages academy prospects and creates youth intakes.
+- Academy screen shows metrics, prospect table, readiness, high-ceiling watchlist, plan controls, reports, promote, and release actions.
+- Promoted academy prospects become normal senior squad players with contracts, wages, profiles, development history, and Prospect squad roles.
+- Scouting now has regions: England & Ireland, Scandinavia, Western Europe, South America, and Global Prospects.
+- Regional assignments support Balanced, Wonderkids, Value, and First-Team Ready focus briefs.
+- Regional scouting can discover new unsigned targets, generate scout reports, add them to the market, and create regional report inbox stories.
+- Scouting screen now includes network metrics, region cards, assignment progress, discoveries, reports, and target actions.
+- Regression tests cover academy migration, academy plans, promotion, regional scouting, discoveries, and market integration.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
@@ -202,27 +217,27 @@ Design target:
 - `686b64e` Improve calendar flow and player profiles
 - `ede7f0a` Add contracts and morale systems
 
-The latest completed feature phase is Contracts + Morale.
+The latest completed feature phase is Youth Academy + Scouting Network.
 
 ## Current Roadmap
 
-### Next Phase: Youth Academy + Scouting Network
+### Next Phase: Staff Room + Tactical Roles
 
 Planned work:
 
-- Youth academy squad and intake generation.
-- Youth player development plans.
-- Scouting network regions and scout assignments.
-- Discovery pipeline from unknown prospects to reports.
-- Inbox stories for academy standouts, scout finds, and development milestones.
+- Staff room screen for coaches, scouts, analysts, physios, and assistant manager.
+- Staff quality affecting training growth, injury prevention, scouting speed, and match preparation.
+- Hiring, wage costs, and staff recommendations.
+- Player tactical roles and role familiarity inside formations.
+- Individual player instructions tied to tactics and match engine phases.
+- Inbox stories for staff advice, tactical concerns, and role-development milestones.
 
 ### Later Phases
 
-- Youth academy and intake.
-- Staff hiring and scouting network.
-- More detailed tactics roles/instructions.
 - Cup competitions.
 - European qualification.
+- Board objectives and manager job security.
+- Youth loans and pathway promises.
 - Save versioning and migration tests for more old-save shapes.
 - Better mobile layout QA.
 

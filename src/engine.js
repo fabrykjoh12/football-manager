@@ -3,7 +3,7 @@
 
   const Data = global.FMLData || (typeof require !== "undefined" ? require("./data.js") : null);
   const MatchEngine = global.FMLMatchEngine || (typeof require !== "undefined" ? require("./match-engine.js") : null);
-  const VERSION = "1.6.0";
+  const VERSION = "1.7.0";
   const BENCH_SIZE = 7;
   const BASE_SEASON_YEAR = 2026;
   const TRAINING_FOCUS = {
@@ -214,6 +214,142 @@
       order: 1
     }
   };
+  const ACADEMY_PLANS = {
+    balanced: {
+      label: "Balanced",
+      description: "Broad technical, tactical, and physical development.",
+      attributes: ["firstTouch", "passing", "decisions", "stamina", "teamwork"],
+      growthRate: 0.034,
+      readiness: 0.9,
+      morale: 0.3
+    },
+    technical: {
+      label: "Technical",
+      description: "Extra ball work for touch, technique, dribbling, and passing.",
+      attributes: ["technique", "firstTouch", "dribbling", "passing", "vision"],
+      growthRate: 0.041,
+      readiness: 0.78,
+      morale: 0.15
+    },
+    physical: {
+      label: "Athletic",
+      description: "Strength, stamina, speed, and durability blocks.",
+      attributes: ["pace", "acceleration", "stamina", "strength", "naturalFitness"],
+      growthRate: 0.038,
+      readiness: 0.82,
+      morale: -0.05
+    },
+    playmaker: {
+      label: "Playmaker",
+      description: "Passing range, vision, decisions, and composure.",
+      attributes: ["passing", "vision", "decisions", "composure", "technique"],
+      growthRate: 0.039,
+      readiness: 0.84,
+      morale: 0.1
+    },
+    finishing: {
+      label: "Finishing",
+      description: "Final-third movement, finishing, composure, and ball striking.",
+      attributes: ["finishing", "offTheBall", "composure", "longShots", "firstTouch"],
+      growthRate: 0.039,
+      readiness: 0.84,
+      morale: 0.1
+    },
+    defensive: {
+      label: "Defensive",
+      description: "Duel work, positioning, tackling, concentration, and bravery.",
+      attributes: ["tackling", "marking", "positioning", "concentration", "bravery"],
+      growthRate: 0.039,
+      readiness: 0.86,
+      morale: 0.1
+    }
+  };
+  const SCOUTING_REGIONS = {
+    england: {
+      label: "England & Ireland",
+      description: "Homegrown talent, Championship standouts, and academy releases.",
+      nationalities: ["England", "Norway", "Denmark", "Sweden"],
+      positionBias: ["CM", "CB", "RB", "LB", "ST"],
+      days: 12,
+      difficulty: 0.9,
+      ceiling: 92,
+      discoverChance: 0.48
+    },
+    scandinavia: {
+      label: "Scandinavia",
+      description: "High-work-rate prospects, value signings, and physical profiles.",
+      nationalities: ["Norway", "Denmark", "Sweden"],
+      positionBias: ["CM", "DM", "CB", "ST", "GK"],
+      days: 14,
+      difficulty: 0.78,
+      ceiling: 90,
+      discoverChance: 0.52
+    },
+    westernEurope: {
+      label: "Western Europe",
+      description: "Technical players from France, Spain, Portugal, Germany, and Italy.",
+      nationalities: ["France", "Spain", "Portugal", "Germany", "Italy", "Netherlands", "Belgium"],
+      positionBias: ["AM", "RW", "LW", "CM", "CB"],
+      days: 16,
+      difficulty: 1.02,
+      ceiling: 95,
+      discoverChance: 0.44
+    },
+    southAmerica: {
+      label: "South America",
+      description: "High-upside attackers, creators, and late-blooming value targets.",
+      nationalities: ["Brazil", "Argentina"],
+      positionBias: ["RW", "LW", "AM", "ST", "CM"],
+      days: 18,
+      difficulty: 1.12,
+      ceiling: 97,
+      discoverChance: 0.4
+    },
+    global: {
+      label: "Global Prospects",
+      description: "Wide discovery brief for unknown prospects in every role.",
+      nationalities: null,
+      positionBias: null,
+      days: 20,
+      difficulty: 1.2,
+      ceiling: 98,
+      discoverChance: 0.38
+    }
+  };
+  const SCOUTING_FOCUS = {
+    balanced: {
+      label: "Balanced",
+      description: "Best overall fit for the current recruitment plan.",
+      ageMin: 17,
+      ageMax: 24,
+      abilityLift: 0,
+      potentialLift: 0
+    },
+    prospects: {
+      label: "Wonderkids",
+      description: "Younger, higher-ceiling players with more uncertainty.",
+      ageMin: 16,
+      ageMax: 20,
+      abilityLift: -4,
+      potentialLift: 7
+    },
+    value: {
+      label: "Value",
+      description: "Affordable players who can become squad options quickly.",
+      ageMin: 18,
+      ageMax: 25,
+      abilityLift: 2,
+      potentialLift: -1
+    },
+    firstTeam: {
+      label: "First-Team Ready",
+      description: "Older discoveries with a shorter path to senior minutes.",
+      ageMin: 20,
+      ageMax: 26,
+      abilityLift: 6,
+      potentialLift: -4
+    }
+  };
   const DEFAULT_TACTICS = {
     mentality: "balanced",
     pressing: "standard",
@@ -259,6 +395,10 @@
       copy[j] = temp;
     }
     return copy;
+  }
+
+  function uniqueIds(ids) {
+    return Array.from(new Set((ids || []).filter(Boolean)));
   }
 
   function average(values) {
@@ -409,7 +549,22 @@
       scouting: {
         reports: {},
         assignments: [],
-        nextAssignmentId: 1
+        discoveries: [],
+        network: {
+          level: 2,
+          activeRegions: []
+        },
+        nextAssignmentId: 1,
+        nextDiscoveryId: 1
+      },
+      academy: {
+        clubId: null,
+        level: 3,
+        prospects: [],
+        reports: [],
+        nextProspectId: 1,
+        lastEventDay: -999,
+        lastIntakeSeason: 0
       },
       transfers: {
         marketIds: [],
@@ -431,6 +586,61 @@
     return `${pick(state, Data.FIRST_NAMES)} ${pick(state, Data.LAST_NAMES)}`;
   }
 
+  function ensureScoutingState(state) {
+    state.scouting = state.scouting || {};
+    state.scouting.reports = state.scouting.reports || {};
+    state.scouting.assignments = state.scouting.assignments || [];
+    state.scouting.discoveries = state.scouting.discoveries || [];
+    state.scouting.network = state.scouting.network || { level: 2, activeRegions: [] };
+    state.scouting.network.level = Math.round(clamp(state.scouting.network.level || 2, 1, 5));
+    state.scouting.network.activeRegions = state.scouting.network.activeRegions || [];
+    const maxAssignment = state.scouting.assignments.reduce((max, assignment) => {
+      const number = Number(String(assignment.id || "").replace(/[^0-9]/g, ""));
+      return Number.isFinite(number) ? Math.max(max, number) : max;
+    }, 0);
+    const maxDiscovery = state.scouting.discoveries.reduce((max, discovery) => {
+      const number = Number(String(discovery.id || "").replace(/[^0-9]/g, ""));
+      return Number.isFinite(number) ? Math.max(max, number) : max;
+    }, 0);
+    state.scouting.nextAssignmentId = Math.max(state.scouting.nextAssignmentId || 1, maxAssignment + 1);
+    state.scouting.nextDiscoveryId = Math.max(state.scouting.nextDiscoveryId || 1, maxDiscovery + 1);
+    state.scouting.assignments.forEach((assignment) => {
+      assignment.type = assignment.type || "player";
+      assignment.status = assignment.status || "active";
+      assignment.discoveries = assignment.discoveries || [];
+      if (assignment.type === "region") {
+        const region = SCOUTING_REGIONS[assignment.regionId] || SCOUTING_REGIONS.england;
+        assignment.focus = SCOUTING_FOCUS[assignment.focus] ? assignment.focus : "balanced";
+        assignment.daysTotal = assignment.daysTotal || region.days;
+        assignment.daysRemaining = assignment.status === "active" ? assignment.daysRemaining === undefined ? region.days : assignment.daysRemaining : 0;
+      }
+    });
+    return state.scouting;
+  }
+
+  function ensureAcademyState(state) {
+    state.academy = state.academy || {};
+    state.academy.clubId = state.academy.clubId || state.activeClubId;
+    state.academy.level = Math.round(clamp(state.academy.level || 3, 1, 5));
+    state.academy.prospects = state.academy.prospects || [];
+    state.academy.reports = state.academy.reports || [];
+    state.academy.nextProspectId = state.academy.nextProspectId || 1;
+    state.academy.lastEventDay = Number.isFinite(state.academy.lastEventDay) ? state.academy.lastEventDay : -999;
+    state.academy.lastIntakeSeason = state.academy.lastIntakeSeason || 0;
+    const maxProspect = state.academy.prospects.reduce((max, prospect) => {
+      const number = Number(String(prospect.id || "").replace(/[^0-9]/g, ""));
+      return Number.isFinite(number) ? Math.max(max, number) : max;
+    }, 0);
+    state.academy.nextProspectId = Math.max(state.academy.nextProspectId, maxProspect + 1);
+    state.academy.prospects = state.academy.prospects.map((prospect) => normalizeAcademyProspect(state, prospect)).filter(Boolean);
+    if (state.activeClubId && !state.academy.prospects.length && !state.academy._creatingIntake) {
+      state.academy._creatingIntake = true;
+      createAcademyIntake(state, 8, { silent: true, initial: true });
+      delete state.academy._creatingIntake;
+    }
+    return state.academy;
+  }
+
   function secondaryPositions(state, position) {
     const map = {
       GK: [],
@@ -446,6 +656,255 @@
     };
     const pool = map[position] || [];
     return shuffle(state, pool).slice(0, random(state) > 0.55 ? 2 : 1);
+  }
+
+  function academyPlanLabel(plan) {
+    return ACADEMY_PLANS[plan] ? ACADEMY_PLANS[plan].label : ACADEMY_PLANS.balanced.label;
+  }
+
+  function academyPlanOptions() {
+    return Object.keys(ACADEMY_PLANS).map((key) => ({
+      key,
+      ...ACADEMY_PLANS[key]
+    }));
+  }
+
+  function academyNationality(state, club) {
+    const homeBias = ["England", "England", "England", "Norway", "Denmark", "Sweden", "France", "Netherlands"];
+    const pool = club && club.realWorld ? homeBias : Data.NATIONALITIES;
+    return pick(state, pool);
+  }
+
+  function normalizeAcademyProspect(state, prospect) {
+    if (!prospect) return null;
+    const position = Data.POSITIONS.includes(prospect.position) ? prospect.position : pick(state, Data.POSITIONS);
+    prospect.position = position;
+    prospect.name = prospect.name || generateName(state);
+    prospect.displayName = prospect.displayName || footballDisplayName(prospect.name);
+    prospect.age = Math.round(clamp(prospect.age || randomInt(state, 15, 18), 15, 19));
+    prospect.nationality = prospect.nationality || pick(state, Data.NATIONALITIES);
+    prospect.foot = prospect.foot || (random(state) > 0.25 ? "Right" : "Left");
+    prospect.secondaryPositions = prospect.secondaryPositions || secondaryPositions(state, position);
+    prospect.height = prospect.height || (position === "GK" || position === "CB" || position === "ST" ? randomInt(state, 181, 196) : randomInt(state, 168, 187));
+    prospect.weight = prospect.weight || (position === "GK" || position === "CB" || position === "ST" ? randomInt(state, 72, 88) : randomInt(state, 62, 80));
+    prospect.trainingPlan = ACADEMY_PLANS[prospect.trainingPlan] ? prospect.trainingPlan : "balanced";
+    prospect.morale = Math.round(clamp(prospect.morale || randomInt(state, 56, 84), 0, 100));
+    prospect.fitness = Math.round(clamp(prospect.fitness || randomInt(state, 78, 100), 0, 100));
+    prospect.currentAbility = Math.round(clamp(prospect.currentAbility || 45, 1, 100));
+    prospect.potential = Math.round(clamp(prospect.potential || prospect.currentAbility + 12, prospect.currentAbility, 99));
+    prospect.attributes = normalizeAttributeSet(prospect.attributes || generateAttributes(state, position, prospect.currentAbility), position, prospect.currentAbility);
+    prospect.currentAbility = calculateAbilityFromAttributes({ ...prospect, clubId: state.activeClubId });
+    prospect.potential = Math.max(prospect.potential, prospect.currentAbility);
+    prospect.developmentEvents = prospect.developmentEvents || [];
+    prospect.createdSeason = prospect.createdSeason || state.season || 1;
+    prospect.createdDate = prospect.createdDate || (state.calendar ? state.calendar.currentDate : null);
+    prospect.status = prospect.status || "academy";
+    return prospect;
+  }
+
+  function generateAcademyProspect(state, club, options) {
+    const academy = ensureAcademyState(state);
+    const level = academy.level || 3;
+    const positionPool = options && options.position ? [options.position] : shuffle(state, Data.SQUAD_BLUEPRINT).slice(0, 10);
+    const position = pick(state, positionPool);
+    const age = options && options.age ? options.age : randomInt(state, 15, 18);
+    const reputation = club && club.reputation ? club.reputation : 70;
+    const rareLift = random(state) > 0.9 ? randomFloat(state, 5, 12) : 0;
+    const currentAbility = Math.round(clamp(reputation - 27 + level * 1.6 + randomFloat(state, -8, 8) + (age - 16) * 1.4, 34, 66));
+    const potential = Math.round(clamp(currentAbility + randomFloat(state, 10, 27) + level * 1.8 + rareLift, currentAbility + 4, 96));
+    const prospect = {
+      id: `yp${academy.nextProspectId++}`,
+      name: generateName(state),
+      age,
+      nationality: academyNationality(state, club),
+      foot: random(state) > 0.25 ? "Right" : "Left",
+      position,
+      secondaryPositions: secondaryPositions(state, position),
+      height: position === "GK" || position === "CB" || position === "ST" ? randomInt(state, 181, 196) : randomInt(state, 168, 187),
+      weight: position === "GK" || position === "CB" || position === "ST" ? randomInt(state, 72, 88) : randomInt(state, 62, 80),
+      currentAbility,
+      potential,
+      attributes: generateAttributes(state, position, currentAbility),
+      trainingPlan: options && options.trainingPlan && ACADEMY_PLANS[options.trainingPlan] ? options.trainingPlan : "balanced",
+      morale: randomInt(state, 56, 84),
+      fitness: randomInt(state, 78, 100),
+      developmentEvents: [],
+      createdSeason: state.season || 1,
+      createdDate: state.calendar ? state.calendar.currentDate : null,
+      intakeSeason: state.season || 1,
+      status: "academy"
+    };
+    return normalizeAcademyProspect(state, prospect);
+  }
+
+  function createAcademyIntake(state, count, options) {
+    const academy = ensureAcademyState(state);
+    const club = getClub(state, academy.clubId || state.activeClubId);
+    const total = count || randomInt(state, 4, 7);
+    const prospects = [];
+    for (let i = 0; i < total; i += 1) {
+      prospects.push(generateAcademyProspect(state, club, options || {}));
+    }
+    academy.prospects = academy.prospects.concat(prospects)
+      .sort((a, b) => b.potential - a.potential || b.currentAbility - a.currentAbility)
+      .slice(0, 22);
+    academy.lastIntakeSeason = state.season || 1;
+    const report = {
+      date: state.calendar ? state.calendar.currentDate : null,
+      season: state.season || 1,
+      type: options && options.initial ? "initial" : "intake",
+      count: prospects.length,
+      topProspectId: prospects[0] ? prospects.slice().sort((a, b) => b.potential - a.potential)[0].id : null
+    };
+    academy.reports.unshift(report);
+    academy.reports = academy.reports.slice(0, 12);
+    if (!(options && options.silent)) {
+      const top = report.topProspectId ? academy.prospects.find((prospect) => prospect.id === report.topProspectId) : null;
+      addInbox(state, "Youth Intake", `${prospects.length} academy players joined the intake${top ? `. ${top.name} is the standout prospect.` : "."}`);
+    }
+    return prospects;
+  }
+
+  function academyReadinessScore(state, prospect) {
+    const academy = ensureAcademyState(state);
+    const club = getClub(state, academy.clubId || state.activeClubId);
+    const benchmark = club ? Math.max(48, club.reputation - 22) : 54;
+    const ageLift = prospect.age >= 18 ? 12 : prospect.age === 17 ? 7 : prospect.age === 16 ? 3 : 0;
+    const abilityScore = clamp((prospect.currentAbility - (benchmark - 16)) * 3.4, 0, 82);
+    const mentality = averageExisting(prospect.attributes || {}, ["decisions", "workRate", "composure", "teamwork"], 55);
+    return round(clamp(abilityScore + ageLift + (mentality - 55) * 0.35, 0, 100), 0);
+  }
+
+  function academyProspectTone(readiness) {
+    if (readiness >= 76) return "green";
+    if (readiness >= 56) return "blue";
+    if (readiness >= 36) return "amber";
+    return "red";
+  }
+
+  function academyProspects(state) {
+    return ensureAcademyState(state).prospects
+      .map((prospect) => normalizeAcademyProspect(state, prospect))
+      .sort((a, b) => b.potential - a.potential || b.currentAbility - a.currentAbility);
+  }
+
+  function academyReport(state) {
+    const academy = ensureAcademyState(state);
+    const prospects = academyProspects(state);
+    const rows = prospects.map((prospect) => {
+      const readiness = academyReadinessScore(state, prospect);
+      return {
+        prospect,
+        readiness,
+        tone: academyProspectTone(readiness),
+        growthRoom: Math.max(0, prospect.potential - prospect.currentAbility),
+        topAttributes: topProspectAttributes(prospect, 3)
+      };
+    });
+    const top = rows[0] || null;
+    const ready = rows.filter((row) => row.readiness >= 64 || row.prospect.currentAbility >= 60);
+    const highCeiling = rows.filter((row) => row.prospect.potential >= 78);
+    return {
+      level: academy.level,
+      prospects: rows,
+      top,
+      ready,
+      highCeiling,
+      averagePotential: round(average(rows.map((row) => row.prospect.potential)), 1),
+      averageReadiness: round(average(rows.map((row) => row.readiness)), 1),
+      reports: academy.reports || []
+    };
+  }
+
+  function topProspectAttributes(prospect, limit) {
+    return Object.keys(prospect.attributes || {})
+      .map((key) => ({ key, label: Data.ATTRIBUTE_LABELS[key] || key, value: prospect.attributes[key] }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, limit || 3);
+  }
+
+  function setAcademyPlan(state, prospectId, plan) {
+    const academy = ensureAcademyState(state);
+    const prospect = academy.prospects.find((item) => item.id === prospectId);
+    if (!prospect || !ACADEMY_PLANS[plan]) return { ok: false, message: "Academy plan unavailable." };
+    prospect.trainingPlan = plan;
+    prospect.morale = Math.round(clamp(prospect.morale + 1, 0, 100));
+    return { ok: true, message: `${prospect.name} moved to ${academyPlanLabel(plan)} training.` };
+  }
+
+  function promoteAcademyProspect(state, prospectId) {
+    const academy = ensureAcademyState(state);
+    const club = getClub(state, academy.clubId || state.activeClubId);
+    const index = academy.prospects.findIndex((prospect) => prospect.id === prospectId);
+    if (!club || index < 0) return { ok: false, message: "Academy prospect not found." };
+    const prospect = normalizeAcademyProspect(state, academy.prospects[index]);
+    if (prospect.age < 16) return { ok: false, message: "Prospect is too young for senior registration." };
+    const player = {
+      id: `p${state.nextPlayerId++}`,
+      name: prospect.name,
+      displayName: prospect.displayName || footballDisplayName(prospect.name),
+      age: prospect.age,
+      nationality: prospect.nationality,
+      foot: prospect.foot,
+      position: prospect.position,
+      secondaryPositions: prospect.secondaryPositions || [],
+      height: prospect.height,
+      weight: prospect.weight,
+      clubId: club.id,
+      value: 0,
+      wage: 0,
+      contractYears: prospect.age <= 17 ? 3 : 2,
+      morale: Math.round(clamp(prospect.morale + 4, 0, 100)),
+      fitness: prospect.fitness,
+      sharpness: randomInt(state, 44, 72),
+      form: [],
+      trainingFocus: "balanced",
+      individualPlan: "extra",
+      squadRole: "prospect",
+      happiness: {
+        lastConcernDay: -999,
+        lastContractDay: -999,
+        lastPromiseDay: -999
+      },
+      promises: {},
+      potential: prospect.potential,
+      currentAbility: prospect.currentAbility,
+      attributes: normalizeAttributeSet({ ...prospect.attributes }, prospect.position, prospect.currentAbility),
+      seasonStats: freshPlayerStats(),
+      careerTotals: freshPlayerStats(),
+      history: [],
+      development: [],
+      developmentEvents: prospect.developmentEvents || [],
+      transferListed: false,
+      loanUntilSeason: null,
+      parentClubId: null,
+      injury: null,
+      suspension: null,
+      source: {
+        provider: "Youth Academy",
+        academyId: prospect.id,
+        promotedSeason: state.season,
+        promotedDate: state.calendar ? state.calendar.currentDate : null
+      }
+    };
+    player.currentAbility = calculateAbilityFromAttributes(player);
+    player.value = calculatePlayerValue(player);
+    player.wage = moneyRound(calculateWage(player) * 0.42);
+    player.development.push(snapshotDevelopment(player, state.season || 1));
+    state.players[player.id] = player;
+    club.squad.push(player.id);
+    academy.prospects.splice(index, 1);
+    repairMatchdaySquad(state, club.id);
+    addInbox(state, "Academy Promotion", `${player.name} signed a senior contract and joined the first-team squad as a prospect.`);
+    return { ok: true, message: `${player.name} promoted to the senior squad.`, playerId: player.id };
+  }
+
+  function releaseAcademyProspect(state, prospectId) {
+    const academy = ensureAcademyState(state);
+    const prospect = academy.prospects.find((item) => item.id === prospectId);
+    if (!prospect) return { ok: false, message: "Academy prospect not found." };
+    academy.prospects = academy.prospects.filter((item) => item.id !== prospectId);
+    return { ok: true, message: `${prospect.name} released from the academy.` };
   }
 
   function calculateAbilityFromAttributes(player) {
@@ -1110,10 +1569,13 @@
       club.bench = autoSelectBench(state, club.id);
     });
 
+    ensureScoutingState(state);
+    ensureAcademyState(state);
     state.league.schedule = generateSchedule(state.league.clubs, state.season, state.calendar.seasonStartDate);
     refreshTransferMarket(state);
     addInbox(state, "Board", `Welcome to ${getClub(state, state.activeClubId).name}. The board expects a competitive Premier League season and sustainable squad building.`);
     addInbox(state, "Recruitment", "Initial scouting files are incomplete. Scout confidence improves each time you watch a target.");
+    addInbox(state, "Academy", "The academy staff have delivered the first development group. Review plans before the season begins.");
     return state;
   }
 
@@ -2698,8 +3160,14 @@
   }
 
   function processScoutingAssignmentsDaily(state) {
+    ensureScoutingState(state);
+    let event = null;
     state.scouting.assignments.forEach((assignment) => {
       if (assignment.status !== "active") return;
+      if (assignment.type === "region") {
+        event = event || advanceRegionalScoutingAssignment(state, assignment, 1);
+        return;
+      }
       assignment.daysRemaining = assignment.daysRemaining === undefined ? Math.max(7, (assignment.roundsRemaining || 3) * 7) : assignment.daysRemaining;
       assignment.daysRemaining = Math.max(0, assignment.daysRemaining - 1);
       assignment.roundsRemaining = Math.ceil(assignment.daysRemaining / 7);
@@ -2716,9 +3184,11 @@
         if (player && report) {
           addInbox(state, "Scout Report Complete", `${player.name}'s report reached ${report.confidence}% confidence.`);
         }
+        event = event || { type: "scouting", title: "Scout Report Complete", playerId: player ? player.id : assignment.playerId };
       }
     });
     state.scouting.assignments = state.scouting.assignments.slice(0, 30);
+    return event;
   }
 
   function maybeGenerateDailyAiOffer(state) {
@@ -2833,6 +3303,99 @@
     return event;
   }
 
+  function applyAcademyDevelopment(state, prospect, report) {
+    normalizeAcademyProspect(state, prospect);
+    const academy = ensureAcademyState(state);
+    const plan = ACADEMY_PLANS[prospect.trainingPlan] || ACADEMY_PLANS.balanced;
+    const ageFactor = prospect.age <= 16 ? 1.24 : prospect.age === 17 ? 1.08 : 0.9;
+    const ceilingFactor = clamp((prospect.potential - prospect.currentAbility + 8) / 28, 0.28, 1.35);
+    prospect.fitness = Math.round(clamp(prospect.fitness + randomFloat(state, -0.9, 1.4), 50, 100));
+    prospect.morale = Math.round(clamp(prospect.morale + plan.morale + randomFloat(state, -0.5, 0.7), 0, 100));
+    if (random(state) > plan.growthRate * ageFactor * ceilingFactor * (1 + academy.level * 0.08)) return null;
+    const attribute = pick(state, plan.attributes);
+    const before = prospect.attributes[attribute] || prospect.currentAbility;
+    const abilityBefore = prospect.currentAbility;
+    prospect.attributes[attribute] = Math.round(clamp(before + 1, 18, 99));
+    prospect.currentAbility = calculateAbilityFromAttributes({ ...prospect, clubId: academy.clubId || state.activeClubId });
+    const event = {
+      date: state.calendar ? state.calendar.currentDate : null,
+      attribute,
+      before,
+      after: prospect.attributes[attribute],
+      abilityBefore,
+      abilityAfter: prospect.currentAbility,
+      plan: prospect.trainingPlan
+    };
+    prospect.developmentEvents.unshift(event);
+    prospect.developmentEvents = prospect.developmentEvents.slice(0, 10);
+    report.development += 1;
+    report.growth.push({
+      prospectId: prospect.id,
+      prospectName: prospect.name,
+      attribute,
+      before,
+      after: prospect.attributes[attribute]
+    });
+    return event;
+  }
+
+  function processAcademyDaily(state) {
+    const academy = ensureAcademyState(state);
+    const report = {
+      date: state.calendar ? state.calendar.currentDate : null,
+      season: state.season || 1,
+      type: "daily",
+      development: 0,
+      growth: []
+    };
+    let event = null;
+    academy.prospects.forEach((prospect) => {
+      const growth = applyAcademyDevelopment(state, prospect, report);
+      if (!event && growth && prospect.currentAbility > growth.abilityBefore && prospect.potential >= 74) {
+        event = { type: "academy", title: "Academy Development", prospectId: prospect.id };
+      }
+    });
+    if (report.development) {
+      academy.reports.unshift(report);
+      academy.reports = academy.reports.slice(0, 12);
+    }
+
+    const day = state.calendar ? state.calendar.day || 1 : 1;
+    if (!event && academy.prospects.length && day - (academy.lastEventDay || -999) >= 14 && random(state) < 0.045) {
+      const standout = academy.prospects.slice().sort((a, b) => b.potential + b.currentAbility - (a.potential + a.currentAbility))[0];
+      standout.morale = Math.round(clamp(standout.morale + randomInt(state, 3, 7), 0, 100));
+      academy.lastEventDay = day;
+      addInbox(state, "Academy Standout", `${standout.name} impressed staff in the academy block. Current internal view: ${standout.currentAbility} CA / ${standout.potential} PA.`);
+      event = { type: "academy", title: "Academy Standout", prospectId: standout.id };
+    } else if (event) {
+      const prospect = academy.prospects.find((item) => item.id === event.prospectId);
+      if (prospect && day - (academy.lastEventDay || -999) >= 10) {
+        academy.lastEventDay = day;
+        addInbox(state, "Academy Development", `${prospect.name} improved in ${academyPlanLabel(prospect.trainingPlan)} work and is now rated ${prospect.currentAbility} CA.`);
+      }
+    }
+    return event;
+  }
+
+  function processAcademySeasonRollover(state) {
+    const academy = ensureAcademyState(state);
+    academy.prospects.forEach((prospect) => {
+      prospect.age += 1;
+      prospect.fitness = randomInt(state, 78, 100);
+      prospect.morale = Math.round(clamp(prospect.morale + randomInt(state, -5, 6), 0, 100));
+      if (prospect.age <= 18 && random(state) > 0.82) {
+        prospect.potential = Math.round(clamp(prospect.potential + randomFloat(state, 0, 2.4), prospect.currentAbility, 99));
+      }
+    });
+    academy.prospects = academy.prospects
+      .filter((prospect) => prospect.age <= 19 || academyReadinessScore(state, prospect) >= 58)
+      .sort((a, b) => b.potential - a.potential || b.currentAbility - a.currentAbility)
+      .slice(0, 18);
+    if (academy.lastIntakeSeason < (state.season || 1)) {
+      createAcademyIntake(state, randomInt(state, 4, 7), { silent: false });
+    }
+  }
+
   function simulateFixturesForDate(state, date) {
     const dueRounds = state.league.schedule.filter((roundData) => {
       const hasUnplayed = roundData.fixtures.some((fixture) => !fixture.played);
@@ -2877,13 +3440,14 @@
     processTransferPreAgreements(state);
     recoverSquadsDaily(state);
     updateMatchPrepFamiliarity(state);
-    processScoutingAssignmentsDaily(state);
+    const scoutingEvent = processScoutingAssignmentsDaily(state);
+    const academyEvent = processAcademyDaily(state);
     const clubEvent = maybeGenerateDailyClubEvent(state);
     const offer = maybeGenerateDailyAiOffer(state);
     const aiMarketMove = maybeProcessDailyAiClubTransfer(state);
     const matchday = simulateFixturesForDate(state, processedDate);
     const happinessEvent = processSquadHappinessDaily(state);
-    if (clubEvent || happinessEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
+    if (clubEvent || happinessEvent || scoutingEvent || academyEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
 
     let seasonEnded = false;
     let seasonSummary = null;
@@ -2903,6 +3467,8 @@
       fixtures: matchday.fixtures,
       activeMatch: matchday.activeMatch,
       matchday: matchday.fixtures.length > 0,
+      scoutingEvent,
+      academyEvent,
       clubEvent,
       happinessEvent,
       offer,
@@ -2929,7 +3495,7 @@
   function describeDayEvent(state, before, result) {
     if (result.activeMatch) return { type: "match", title: "Matchday", body: "The next match is ready." };
     if (result.seasonEnded) return { type: "season", title: "Season Complete", body: result.seasonSummary ? `${result.seasonSummary.championName} won the league.` : "The season has finished." };
-    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.happinessEvent ? { type: result.happinessEvent.type, title: result.happinessEvent.title } : null) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
+    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.scoutingEvent ? { type: result.scoutingEvent.type, title: result.scoutingEvent.title } : null) || (result.academyEvent ? { type: result.academyEvent.type, title: result.academyEvent.title } : null) || (result.happinessEvent ? { type: result.happinessEvent.type, title: result.happinessEvent.title } : null) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
   }
 
   function simulateUntilNextEvent(state, options) {
@@ -3101,6 +3667,7 @@
     state.season += 1;
     state.league.currentRound = 0;
     state.calendar = createSeasonCalendar(state.season);
+    processAcademySeasonRollover(state);
     state.league.schedule = generateSchedule(state.league.clubs, state.season, state.calendar.seasonStartDate);
     state.transfers.offers = state.transfers.offers.filter((offer) => offer.status === "pending" || offer.status === "countered").slice(0, 12);
     refreshTransferMarket(state);
@@ -4278,16 +4845,21 @@
 
   function refreshTransferMarket(state) {
     ensureTransferState(state);
+    ensureScoutingState(state);
     const activeClub = getClub(state, state.activeClubId);
     const activeIds = new Set(activeClub ? activeClub.squad : []);
     const pool = Object.values(state.players)
       .filter((player) => !activeIds.has(player.id) && !player.loanUntilSeason)
       .sort((a, b) => b.currentAbility + b.potential * 0.35 - (a.currentAbility + a.potential * 0.35));
     const selected = pool.filter((_, index) => index < 54 || random(state) > 0.75).slice(0, 72);
-    state.transfers.marketIds = selected.map((player) => player.id);
+    const discoveryIds = (state.scouting.discoveries || []).map((discovery) => discovery.playerId);
+    const shortlistIds = state.transfers.shortlist || [];
+    const freeAgentIds = state.transfers.freeAgentIds || [];
+    state.transfers.marketIds = uniqueIds(selected.map((player) => player.id).concat(discoveryIds, shortlistIds, freeAgentIds)).slice(0, 90);
   }
 
   function scoutPlayer(state, playerId, mode) {
+    ensureScoutingState(state);
     const player = getPlayer(state, playerId);
     if (!player) return null;
     const existing = state.scouting.reports[playerId] || {
@@ -4310,6 +4882,174 @@
     return existing;
   }
 
+  function scoutingRegionOptions() {
+    return Object.keys(SCOUTING_REGIONS).map((key) => ({
+      key,
+      ...SCOUTING_REGIONS[key]
+    }));
+  }
+
+  function scoutingFocusOptions() {
+    return Object.keys(SCOUTING_FOCUS).map((key) => ({
+      key,
+      ...SCOUTING_FOCUS[key]
+    }));
+  }
+
+  function scoutingFocusLabel(focus) {
+    return SCOUTING_FOCUS[focus] ? SCOUTING_FOCUS[focus].label : SCOUTING_FOCUS.balanced.label;
+  }
+
+  function scoutingRegionLabel(regionId) {
+    return SCOUTING_REGIONS[regionId] ? SCOUTING_REGIONS[regionId].label : SCOUTING_REGIONS.england.label;
+  }
+
+  function discoveryFitScore(state, player) {
+    const recruitment = recruitmentTargetScore(state, player.id);
+    const scout = getScoutView(state, player.id);
+    const upside = clamp((player.potential - player.currentAbility) * 2.8, 0, 42);
+    const confidence = scout ? scout.confidence * 0.18 : 0;
+    return Math.round(clamp((recruitment ? recruitment.score * 0.64 : 42) + upside + confidence, 0, 100));
+  }
+
+  function generateScoutingDiscovery(state, assignment) {
+    const scouting = ensureScoutingState(state);
+    const transfers = ensureTransferState(state);
+    const activeClub = getClub(state, state.activeClubId);
+    const region = SCOUTING_REGIONS[assignment.regionId] || SCOUTING_REGIONS.england;
+    const focus = SCOUTING_FOCUS[assignment.focus] || SCOUTING_FOCUS.balanced;
+    const needs = activeClub ? recruitmentNeedReport(state, activeClub.id).needs : [];
+    const primaryNeed = needs[0] || null;
+    const positionPool = region.positionBias || Data.POSITIONS;
+    const position = primaryNeed && random(state) < 0.38 ? primaryNeed.position : pick(state, positionPool);
+    const age = randomInt(state, focus.ageMin, focus.ageMax);
+    const nationalityPool = region.nationalities || Data.NATIONALITIES;
+    const reputation = activeClub ? activeClub.reputation : 70;
+    const rawAbility = reputation - 17 + focus.abilityLift + randomFloat(state, -8, 8) - region.difficulty * 2 + (age >= 22 ? 3 : 0);
+    const currentAbility = Math.round(clamp(rawAbility, 43, focus === SCOUTING_FOCUS.firstTeam ? 80 : 75));
+    const rareLift = random(state) > 0.88 ? randomFloat(state, 5, 13) : 0;
+    const potential = Math.round(clamp(currentAbility + randomFloat(state, 6, 22) + focus.potentialLift + rareLift, currentAbility + 1, region.ceiling));
+    const player = {
+      id: `p${state.nextPlayerId++}`,
+      name: generateName(state),
+      displayName: null,
+      age,
+      nationality: pick(state, nationalityPool),
+      foot: random(state) > 0.25 ? "Right" : "Left",
+      position,
+      secondaryPositions: secondaryPositions(state, position),
+      height: position === "GK" || position === "CB" || position === "ST" ? randomInt(state, 181, 197) : randomInt(state, 168, 188),
+      weight: position === "GK" || position === "CB" || position === "ST" ? randomInt(state, 74, 91) : randomInt(state, 63, 82),
+      clubId: null,
+      value: 0,
+      wage: 0,
+      contractYears: 0,
+      morale: randomInt(state, 50, 78),
+      fitness: randomInt(state, 76, 100),
+      sharpness: randomInt(state, 42, 76),
+      form: [],
+      trainingFocus: "balanced",
+      individualPlan: "normal",
+      squadRole: age <= 20 ? "prospect" : "rotation",
+      happiness: {
+        lastConcernDay: -999,
+        lastContractDay: -999,
+        lastPromiseDay: -999
+      },
+      promises: {},
+      potential,
+      currentAbility,
+      attributes: generateAttributes(state, position, currentAbility),
+      seasonStats: freshPlayerStats(),
+      careerTotals: freshPlayerStats(),
+      history: [],
+      development: [],
+      developmentEvents: [],
+      transferListed: false,
+      loanUntilSeason: null,
+      parentClubId: null,
+      injury: null,
+      suspension: null,
+      source: {
+        provider: "Scouting Network",
+        regionId: assignment.regionId,
+        region: region.label,
+        focus: assignment.focus,
+        discoveredDate: state.calendar ? state.calendar.currentDate : null
+      }
+    };
+    player.displayName = footballDisplayName(player.name);
+    player.currentAbility = calculateAbilityFromAttributes(player);
+    player.value = moneyRound(calculatePlayerValue(player) * 0.72);
+    player.wage = moneyRound(calculateWage(player) * (age <= 20 ? 0.52 : 0.7));
+    player.development.push(snapshotDevelopment(player, state.season || 1));
+    player.source.fc26 = {
+      matched: false,
+      source: "Generated EAFC-style projection",
+      ...fc26StyleStats(player)
+    };
+    state.players[player.id] = player;
+    if (!transfers.freeAgentIds.includes(player.id)) transfers.freeAgentIds.push(player.id);
+
+    const confidence = randomInt(state, 34, 62) + Math.round((scouting.network.level || 2) * 2);
+    const report = {
+      playerId: player.id,
+      confidence: Math.round(clamp(confidence, 0, 100)),
+      observedAbility: player.currentAbility,
+      observedPotential: player.potential,
+      currentRange: abilityRange(player.currentAbility, confidence),
+      potentialRange: abilityRange(player.potential, confidence),
+      notes: [`${player.name} was discovered by the ${region.label} network as a ${scoutingFocusLabel(assignment.focus).toLowerCase()} target.`],
+      regionId: assignment.regionId,
+      focus: assignment.focus,
+      updatedAt: new Date().toISOString()
+    };
+    state.scouting.reports[player.id] = report;
+    const discovery = {
+      id: `sd-${scouting.nextDiscoveryId++}`,
+      playerId: player.id,
+      playerName: player.name,
+      regionId: assignment.regionId,
+      focus: assignment.focus,
+      assignmentId: assignment.id,
+      date: state.calendar ? state.calendar.currentDate : null,
+      season: state.season || 1,
+      score: discoveryFitScore(state, player),
+      status: "new"
+    };
+    scouting.discoveries.unshift(discovery);
+    scouting.discoveries = scouting.discoveries.slice(0, 40);
+    assignment.discoveries = assignment.discoveries || [];
+    assignment.discoveries.unshift(discovery.id);
+    refreshTransferMarket(state);
+    return discovery;
+  }
+
+  function advanceRegionalScoutingAssignment(state, assignment, days) {
+    const region = SCOUTING_REGIONS[assignment.regionId] || SCOUTING_REGIONS.england;
+    assignment.focus = SCOUTING_FOCUS[assignment.focus] ? assignment.focus : "balanced";
+    assignment.daysTotal = assignment.daysTotal || region.days;
+    const before = assignment.daysRemaining === undefined ? assignment.daysTotal : assignment.daysRemaining;
+    assignment.daysRemaining = Math.max(0, before - days);
+    assignment.roundsRemaining = Math.ceil(assignment.daysRemaining / 7);
+    assignment.progress = Math.round(clamp((assignment.daysTotal - assignment.daysRemaining) / Math.max(1, assignment.daysTotal) * 100, 0, 100));
+    let discovery = null;
+    const crossedCheckpoint = Math.floor(before / 5) !== Math.floor(assignment.daysRemaining / 5);
+    if ((assignment.daysRemaining === 0 || crossedCheckpoint) && (assignment.daysRemaining === 0 || random(state) < region.discoverChance)) {
+      discovery = generateScoutingDiscovery(state, assignment);
+    }
+    if (assignment.daysRemaining <= 0) {
+      if (!assignment.discoveries || !assignment.discoveries.length) discovery = generateScoutingDiscovery(state, assignment);
+      assignment.status = "complete";
+      assignment.completedSeason = state.season;
+      assignment.completedRound = state.league.currentRound + 1;
+      assignment.completedDate = state.calendar ? state.calendar.currentDate : null;
+      const count = assignment.discoveries ? assignment.discoveries.length : 0;
+      addInbox(state, "Regional Scout Report", `${scoutingRegionLabel(assignment.regionId)} assignment complete with ${count} discovered target${count === 1 ? "" : "s"}.`);
+    }
+    return discovery ? { type: "scouting", title: "Scouting Discovery", discoveryId: discovery.id, playerId: discovery.playerId } : null;
+  }
+
   function abilityRange(value, confidence) {
     const spread = Math.round(clamp((100 - confidence) / 5, 1, 14));
     return {
@@ -4319,6 +5059,7 @@
   }
 
   function assignScout(state, playerId) {
+    ensureScoutingState(state);
     const player = getPlayer(state, playerId);
     if (!player) return { ok: false, message: "Player not found." };
     const active = state.scouting.assignments.find((assignment) => assignment.playerId === playerId && assignment.status === "active");
@@ -4338,9 +5079,41 @@
     return { ok: true, message: `${player.name} assigned for a three-match scouting run.` };
   }
 
+  function assignRegionalScout(state, regionId, focus) {
+    const scouting = ensureScoutingState(state);
+    const region = SCOUTING_REGIONS[regionId];
+    if (!region) return { ok: false, message: "Scouting region unavailable." };
+    const activeRegions = scouting.assignments.filter((assignment) => assignment.type === "region" && assignment.status === "active");
+    if (activeRegions.length >= 3) return { ok: false, message: "All regional scouting slots are active." };
+    if (activeRegions.some((assignment) => assignment.regionId === regionId)) return { ok: false, message: `${region.label} is already being scouted.` };
+    const assignment = {
+      id: `sa-${scouting.nextAssignmentId++}`,
+      type: "region",
+      regionId,
+      focus: SCOUTING_FOCUS[focus] ? focus : "balanced",
+      status: "active",
+      startedSeason: state.season,
+      startedRound: state.league.currentRound + 1,
+      startedDate: state.calendar ? state.calendar.currentDate : null,
+      roundsRemaining: Math.ceil(region.days / 7),
+      daysRemaining: region.days,
+      daysTotal: region.days,
+      progress: 0,
+      discoveries: []
+    };
+    scouting.assignments.unshift(assignment);
+    return { ok: true, message: `${region.label} assignment started: ${scoutingFocusLabel(assignment.focus)}.` };
+  }
+
   function processScoutingAssignments(state) {
+    ensureScoutingState(state);
+    let event = null;
     state.scouting.assignments.forEach((assignment) => {
       if (assignment.status !== "active") return;
+      if (assignment.type === "region") {
+        event = event || advanceRegionalScoutingAssignment(state, assignment, 7);
+        return;
+      }
       const report = scoutPlayer(state, assignment.playerId, "assignment");
       assignment.roundsRemaining -= 1;
       assignment.daysRemaining = assignment.daysRemaining === undefined ? Math.max(0, assignment.roundsRemaining * 7) : Math.max(0, assignment.daysRemaining - 7);
@@ -4356,6 +5129,7 @@
       }
     });
     state.scouting.assignments = state.scouting.assignments.slice(0, 30);
+    return event;
   }
 
   function scoutNote(player, confidence) {
@@ -4367,6 +5141,7 @@
   }
 
   function getScoutView(state, playerId) {
+    ensureScoutingState(state);
     const player = getPlayer(state, playerId);
     const report = state.scouting.reports[playerId];
     if (!player) return null;
@@ -4387,6 +5162,38 @@
       potentialRange: report.potentialRange || abilityRange(report.observedPotential, report.confidence),
       currentStars: stars(report.observedAbility),
       potentialStars: stars(report.observedPotential)
+    };
+  }
+
+  function scoutingDiscoveryPlayers(state) {
+    ensureScoutingState(state);
+    return state.scouting.discoveries
+      .map((discovery) => ({ discovery, player: getPlayer(state, discovery.playerId), report: state.scouting.reports[discovery.playerId] }))
+      .filter((item) => item.player);
+  }
+
+  function scoutingNetworkReport(state) {
+    const scouting = ensureScoutingState(state);
+    const assignments = scouting.assignments || [];
+    const discoveries = scoutingDiscoveryPlayers(state);
+    const regions = scoutingRegionOptions().map((region) => {
+      const active = assignments.find((assignment) => assignment.type === "region" && assignment.regionId === region.key && assignment.status === "active");
+      const regionDiscoveries = discoveries.filter((item) => item.discovery.regionId === region.key);
+      return {
+        ...region,
+        active,
+        discoveries: regionDiscoveries,
+        lastDiscovery: regionDiscoveries[0] || null
+      };
+    });
+    return {
+      level: scouting.network.level || 2,
+      activeAssignments: assignments.filter((assignment) => assignment.status === "active"),
+      completedAssignments: assignments.filter((assignment) => assignment.status === "complete"),
+      regions,
+      discoveries,
+      discoveryCount: discoveries.length,
+      assignmentSlots: 3
     };
   }
 
@@ -4794,9 +5601,7 @@
     state.calendar = { ...createSeasonCalendar(state.season || 1), ...(state.calendar || {}) };
     state.league.records = state.league.records || {};
     ensureTransferState(state);
-    state.scouting.reports = state.scouting.reports || {};
-    state.scouting.assignments = state.scouting.assignments || [];
-    state.scouting.nextAssignmentId = state.scouting.nextAssignmentId || state.scouting.assignments.length + 1;
+    ensureScoutingState(state);
     ensureScheduleDates(state);
     if (!hadCalendar && savedRound > 0 && state.league.schedule && state.league.schedule.length) {
       const previousRound = state.league.schedule[Math.min(savedRound - 1, state.league.schedule.length - 1)];
@@ -4810,6 +5615,7 @@
       club.lineup = club.lineup || [];
       club.bench = club.bench || [];
     });
+    ensureAcademyState(state);
     Object.values(state.players || {}).forEach((player) => {
       player.attributes = normalizeAttributeSet(player.attributes || {}, player.position, player.currentAbility || 58);
       player.seasonStats = player.seasonStats || freshPlayerStats();
@@ -4833,7 +5639,14 @@
       }
     });
     (state.scouting.assignments || []).forEach((assignment) => {
-      assignment.daysRemaining = assignment.status === "active" ? assignment.daysRemaining === undefined ? Math.max(1, (assignment.roundsRemaining || 1) * 7) : assignment.daysRemaining : 0;
+      if (assignment.type === "region") {
+        const region = SCOUTING_REGIONS[assignment.regionId] || SCOUTING_REGIONS.england;
+        assignment.daysTotal = assignment.daysTotal || region.days;
+        assignment.daysRemaining = assignment.status === "active" ? assignment.daysRemaining === undefined ? region.days : assignment.daysRemaining : 0;
+        assignment.focus = SCOUTING_FOCUS[assignment.focus] ? assignment.focus : "balanced";
+      } else {
+        assignment.daysRemaining = assignment.status === "active" ? assignment.daysRemaining === undefined ? Math.max(1, (assignment.roundsRemaining || 1) * 7) : assignment.daysRemaining : 0;
+      }
       assignment.startedDate = assignment.startedDate || state.calendar.currentDate;
     });
     (state.league.clubs || []).forEach((club) => repairMatchdaySquad(state, club.id));
@@ -4875,6 +5688,9 @@
     MATCH_PREP,
     INDIVIDUAL_PLANS,
     SQUAD_ROLES,
+    ACADEMY_PLANS,
+    SCOUTING_REGIONS,
+    SCOUTING_FOCUS,
     DEFAULT_TACTICS,
     trainingFocusLabel,
     trainingPlanLabel,
@@ -4882,6 +5698,19 @@
     individualPlanLabel,
     squadRoleLabel,
     squadRoleOptions,
+    academyPlanLabel,
+    academyPlanOptions,
+    academyProspects,
+    academyReport,
+    setAcademyPlan,
+    promoteAcademyProspect,
+    releaseAcademyProspect,
+    scoutingRegionOptions,
+    scoutingFocusOptions,
+    scoutingFocusLabel,
+    scoutingRegionLabel,
+    scoutingNetworkReport,
+    scoutingDiscoveryPlayers,
     playerHappinessReport,
     squadHappinessReport,
     contractRenewalProfile,
@@ -4927,6 +5756,7 @@
     teamStrength,
     scoutPlayer,
     assignScout,
+    assignRegionalScout,
     processScoutingAssignments,
     getScoutView,
     setTrainingFocus,

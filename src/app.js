@@ -22,6 +22,7 @@
     marketView: "all",
     marketSort: "recruitmentScore",
     marketDir: "desc",
+    regionalFocus: "balanced",
     selectedPlayerId: null,
     lineupSelection: new Set(),
     liveMatch: null,
@@ -38,6 +39,7 @@
     ["lineup", "Lineup"],
     ["tactics", "Tactics"],
     ["training", "Training"],
+    ["academy", "Academy"],
     ["match", "Match Day"],
     ["league", "League"],
     ["transfers", "Transfers"],
@@ -214,6 +216,7 @@
       lineup: renderLineup,
       tactics: renderTactics,
       training: renderTraining,
+      academy: renderAcademy,
       match: renderMatchDay,
       league: renderLeague,
       transfers: renderTransfers,
@@ -246,10 +249,11 @@
       lineup: "Pick exactly 11 starters or let the staff select by role fit.",
       tactics: "Shape, intensity, risk, and attacking routes for the next match.",
       training: "Plan the week, manage load, and prepare for the next opponent.",
+      academy: "Youth prospects, development plans, and first-team promotion.",
       match: "Continue through the calendar and review matchday reports.",
       league: "Table, goal difference, points, and recent form.",
       transfers: "Scout, shortlist, buy, loan, sell, and manage offers.",
-      scouting: "Reports become more accurate with repeated scouting.",
+      scouting: "Regional assignments, discoveries, target reports, and scout confidence.",
       stats: "League leaders, club leaders, and career production.",
       history: "Champions, awards, manager seasons, and league records.",
       finances: "Balance, budgets, wage pressure, and transfer movement.",
@@ -752,6 +756,130 @@
     `;
   }
 
+  function renderAcademy() {
+    const report = Engine.academyReport(state);
+    const top = report.top ? report.top.prospect : null;
+    return `
+      <div class="grid four">
+        ${metric("Academy Level", report.level, "Development setup")}
+        ${metric("Prospects", report.prospects.length, `${report.highCeiling.length} high ceiling`)}
+        ${metric("Avg Potential", report.averagePotential || "-", `${report.averageReadiness || 0}/100 readiness`)}
+        ${metric("Standout", top ? top.displayName || top.name : "-", top ? `${top.currentAbility}/${top.potential} CA/PA` : "No prospects")}
+      </div>
+
+      <div class="grid two section-gap academy-layout">
+        <div class="panel">
+          <div class="ratings-heading">
+            <h2 class="panel-title">Academy Squad</h2>
+            <span class="pill blue">${report.ready.length} close to senior level</span>
+          </div>
+          ${renderAcademyProspects(report.prospects)}
+        </div>
+        <div class="panel">
+          <h2 class="panel-title">Talent Watch</h2>
+          ${renderAcademyWatch(report)}
+        </div>
+      </div>
+
+      <div class="panel section-gap">
+        <h2 class="panel-title">Academy Reports</h2>
+        ${renderAcademyReports(report.reports)}
+      </div>
+    `;
+  }
+
+  function renderAcademyProspects(rows) {
+    if (!rows.length) return `<div class="empty-state">No academy prospects are currently registered.</div>`;
+    return `
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Prospect</th><th>Pos</th><th>Age</th><th>CA</th><th>PA</th><th>Ready</th><th>Plan</th><th>Morale</th><th>Top Attributes</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${rows.map(({ prospect, readiness, tone, topAttributes }) => `
+              <tr>
+                <td>
+                  <strong>${escapeHtml(prospect.name)}</strong>
+                  <div class="small-muted">${escapeHtml(prospect.nationality)} | ${escapeHtml(prospect.foot)} foot</div>
+                </td>
+                <td>${positionBadge(prospect.position)}</td>
+                <td>${prospect.age}</td>
+                <td>${prospect.currentAbility}</td>
+                <td>${prospect.potential}</td>
+                <td>${bar(readiness, tone)}</td>
+                <td>
+                  <select data-action="set-academy-plan" data-prospect-id="${prospect.id}">
+                    ${Engine.academyPlanOptions().map((plan) => `<option value="${plan.key}" ${prospect.trainingPlan === plan.key ? "selected" : ""}>${escapeHtml(plan.label)}</option>`).join("")}
+                  </select>
+                </td>
+                <td>${bar(prospect.morale, prospect.morale >= 72 ? "green" : prospect.morale >= 52 ? "amber" : "red")}</td>
+                <td>
+                  <div class="attribute-chip-list compact">
+                    ${topAttributes.map((item) => `<span class="attribute-chip"><strong>${item.value}</strong>${escapeHtml(item.label)}</span>`).join("")}
+                  </div>
+                </td>
+                <td>
+                  <div class="table-actions">
+                    <button class="btn-compact" data-action="promote-academy" data-prospect-id="${prospect.id}">Promote</button>
+                    <button class="btn-compact" data-action="release-academy" data-prospect-id="${prospect.id}">Release</button>
+                  </div>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderAcademyWatch(report) {
+    const items = report.ready.length ? report.ready : report.highCeiling;
+    if (!items.length) return `<div class="empty-state">Academy staff will flag ready prospects and high-ceiling players here.</div>`;
+    return `
+      <div class="target-stack">
+        ${items.slice(0, 6).map(({ prospect, readiness, tone, growthRoom }) => `
+          <div class="target-card">
+            <span>
+              <strong>${escapeHtml(prospect.name)}</strong>
+              <small>${positionBadge(prospect.position)} ${prospect.age} yrs | ${academyGrowthLabel(growthRoom)} | ${Engine.academyPlanLabel(prospect.trainingPlan)}</small>
+            </span>
+            <span class="badge ${tone}">${readiness}/100</span>
+            <div class="table-actions">
+              <button class="btn-compact" data-action="promote-academy" data-prospect-id="${prospect.id}">Promote</button>
+              <button class="btn-compact" data-action="release-academy" data-prospect-id="${prospect.id}">Release</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function academyGrowthLabel(growthRoom) {
+    if (growthRoom >= 18) return "Elite upside";
+    if (growthRoom >= 11) return "Strong upside";
+    if (growthRoom >= 5) return "Useful growth";
+    return "Near ceiling";
+  }
+
+  function renderAcademyReports(reports) {
+    const visible = (reports || []).slice(0, 6);
+    if (!visible.length) return `<div class="empty-state">Development notes appear after youth training or intake days.</div>`;
+    return `
+      <div class="timeline">
+        ${visible.map((report) => `
+          <div class="timeline-item">
+            <strong>${report.date ? escapeHtml(Engine.formatGameDate(report.date)) : `S${report.season}`}</strong>
+            <span>
+              <b>${report.type === "intake" || report.type === "initial" ? "Youth Intake" : "Development Block"}</b><br>
+              <span class="small-muted">${report.count ? `${report.count} prospects added.` : `${report.development || 0} development note${report.development === 1 ? "" : "s"}.`}</span>
+            </span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
   function loadTone(load) {
     if (load <= 0.2) return "Rest";
     if (load < 0.7) return "Light";
@@ -1102,6 +1230,7 @@
   }
 
   function renderScouting() {
+    const network = Engine.scoutingNetworkReport(state);
     const reports = Object.values(state.scouting.reports)
       .map((report) => ({ report, player: Engine.getPlayer(state, report.playerId) }))
       .filter((item) => item.player)
@@ -1109,19 +1238,98 @@
     const recommendations = Engine.recruitmentRecommendations(state, 10).map((item) => item.player);
 
     return `
-      <div class="grid three">
+      <div class="grid four">
+        ${metric("Network Level", network.level, "Regional coverage")}
+        ${metric("Active Briefs", `${network.activeAssignments.length}/${network.assignmentSlots}`, "Player and region assignments")}
+        ${metric("Discoveries", network.discoveryCount, "Generated targets")}
+        ${metric("Reports", reports.length, "Known target files")}
+      </div>
+
+      <div class="panel section-gap scouting-network-panel">
+        <div class="ratings-heading">
+          <h2 class="panel-title">Regional Network</h2>
+          <div class="toolbar compact-toolbar">
+            <select data-ui="regionalFocus">
+              ${Engine.scoutingFocusOptions().map((focus) => `<option value="${focus.key}" ${ui.regionalFocus === focus.key ? "selected" : ""}>${escapeHtml(focus.label)}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+        ${renderScoutingRegions(network)}
+      </div>
+
+      <div class="grid three section-gap">
         <div class="panel">
           <h2 class="panel-title">Assignments</h2>
           ${renderScoutAssignments(state.scouting.assignments || [])}
         </div>
         <div class="panel">
+          <h2 class="panel-title">Discoveries</h2>
+          ${renderDiscoveryTable(network.discoveries)}
+        </div>
+        <div class="panel">
           <h2 class="panel-title">Reports</h2>
           ${reports.length ? renderReportsTable(reports) : `<div class="empty-state">No reports yet.</div>`}
         </div>
-        <div class="panel">
-          <h2 class="panel-title">Recommended Targets</h2>
-          ${renderRecommendationTable(recommendations)}
-        </div>
+      </div>
+
+      <div class="panel section-gap">
+        <h2 class="panel-title">Recommended Targets</h2>
+        ${renderRecommendationTable(recommendations)}
+      </div>
+    `;
+  }
+
+  function renderScoutingRegions(network) {
+    return `
+      <div class="region-grid">
+        ${network.regions.map((region) => `
+          <div class="region-card ${region.active ? "active" : ""}">
+            <div>
+              <strong>${escapeHtml(region.label)}</strong>
+              <span class="badge ${region.active ? "blue" : region.discoveries.length ? "green" : ""}">${region.active ? `${region.active.daysRemaining} days` : `${region.discoveries.length} finds`}</span>
+            </div>
+            <p>${escapeHtml(region.description)}</p>
+            ${region.active ? `
+              ${bar(region.active.progress || 0, "blue")}
+              <small>${escapeHtml(Engine.scoutingFocusLabel(region.active.focus))} | ${region.active.discoveries.length} discovered</small>
+            ` : `
+              <small>${region.lastDiscovery ? `Latest: ${escapeHtml(region.lastDiscovery.player.name)}` : "No active brief"}</small>
+            `}
+            <button class="btn-compact" data-action="assign-region" data-region-id="${region.key}" ${region.active ? "disabled" : ""}>Scout Region</button>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderDiscoveryTable(items) {
+    if (!items.length) return `<div class="empty-state">Regional assignments will surface unknown targets here.</div>`;
+    return `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Player</th><th>Region</th><th>Fit</th><th>Scout</th><th></th></tr></thead>
+          <tbody>
+            ${items.slice(0, 8).map(({ discovery, player, report }) => {
+              const scout = Engine.getScoutView(state, player.id);
+              const tone = discovery.score >= 78 ? "green" : discovery.score >= 58 ? "blue" : discovery.score >= 42 ? "amber" : "red";
+              return `
+                <tr>
+                  <td>${playerNameButton(player)}<div class="small-muted">${positionBadge(player.position)} ${player.age} yrs | ${escapeHtml(player.nationality)}</div></td>
+                  <td>${escapeHtml(Engine.scoutingRegionLabel(discovery.regionId))}</td>
+                  <td><span class="badge ${tone}">${discovery.score}</span></td>
+                  <td>${scout ? `${scout.confidence}%` : `${report ? report.confidence : 0}%`}</td>
+                  <td>
+                    <div class="table-actions">
+                      <button class="btn-compact" data-action="scout-player" data-player-id="${player.id}">Scout</button>
+                      <button class="btn-compact" data-action="${Engine.isShortlisted(state, player.id) ? "remove-shortlist" : "shortlist-player"}" data-player-id="${player.id}">${Engine.isShortlisted(state, player.id) ? "Unlist" : "Shortlist"}</button>
+                      <button class="btn-compact" data-action="open-offer" data-player-id="${player.id}">Sign</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
       </div>
     `;
   }
@@ -2021,18 +2229,33 @@
 
   function renderScoutAssignments(assignments) {
     const visible = assignments.slice(0, 8);
-    if (!visible.length) return `<div class="empty-state">Assign scouts from the market to build confidence over two in-game weeks.</div>`;
+    if (!visible.length) return `<div class="empty-state">Assign scouts from the market or start a regional brief to build the pipeline.</div>`;
     return `
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Player</th><th>Status</th><th>Remaining</th><th>Confidence</th></tr></thead>
+          <thead><tr><th>Brief</th><th>Type</th><th>Status</th><th>Remaining</th><th>Confidence</th></tr></thead>
           <tbody>
             ${visible.map((assignment) => {
+              if (assignment.type === "region") {
+                return `
+                  <tr>
+                    <td>
+                      <strong>${escapeHtml(Engine.scoutingRegionLabel(assignment.regionId))}</strong>
+                      <div class="small-muted">${escapeHtml(Engine.scoutingFocusLabel(assignment.focus))} | ${assignment.discoveries ? assignment.discoveries.length : 0} finds</div>
+                    </td>
+                    <td><span class="badge blue">Region</span></td>
+                    <td>${assignment.status === "active" ? `<span class="badge blue">Active</span>` : `<span class="badge green">Complete</span>`}</td>
+                    <td>${assignment.status === "active" ? `${assignment.daysRemaining || 0} days` : "-"}</td>
+                    <td>${bar(assignment.progress || (assignment.status === "complete" ? 100 : 0), assignment.status === "complete" ? "green" : "blue")}</td>
+                  </tr>
+                `;
+              }
               const player = Engine.getPlayer(state, assignment.playerId);
               const report = player ? Engine.getScoutView(state, player.id) : null;
               return `
                 <tr>
                   <td>${player ? playerNameButton(player) : "Unknown"}</td>
+                  <td><span class="badge">Player</span></td>
                   <td>${assignment.status === "active" ? `<span class="badge blue">Active</span>` : `<span class="badge green">Complete</span>`}</td>
                   <td>${assignment.status === "active" ? `${assignment.daysRemaining !== undefined ? assignment.daysRemaining : (assignment.roundsRemaining || 0) * 7} days` : "-"}</td>
                   <td>${report ? `${report.confidence}%` : "0%"}</td>
@@ -2423,6 +2646,28 @@
       render();
       return;
     }
+    if (action === "assign-region") {
+      const result = Engine.assignRegionalScout(state, actionEl.dataset.regionId, ui.regionalFocus);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (action === "promote-academy") {
+      const result = Engine.promoteAcademyProspect(state, actionEl.dataset.prospectId);
+      syncLineupSelection();
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (action === "release-academy") {
+      const result = Engine.releaseAcademyProspect(state, actionEl.dataset.prospectId);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
     if (action === "shortlist-player") {
       const result = Engine.addToShortlist(state, actionEl.dataset.playerId);
       Storage.save(state);
@@ -2572,6 +2817,13 @@
       render();
       return;
     }
+    if (target.dataset.action === "set-academy-plan") {
+      const result = Engine.setAcademyPlan(state, target.dataset.prospectId, target.value);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
     if (target.dataset.action === "set-individual-plan") {
       const result = Engine.setIndividualPlan(state, target.dataset.playerId, target.value);
       Storage.save(state);
@@ -2669,6 +2921,7 @@
     if (key === "marketPosition") ui.marketPosition = value;
     if (key === "marketView") ui.marketView = value;
     if (key === "marketSort") ui.marketSort = value;
+    if (key === "regionalFocus") ui.regionalFocus = value;
   }
 
   function simulateRound() {
