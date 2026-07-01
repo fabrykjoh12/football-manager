@@ -174,8 +174,9 @@ Design target:
 - `7f60dbd` Add transfer windows and project roadmap
 - `402c010` Add negotiation intelligence and deadline day panel
 - `8b9be63` Add AI transfer activity and market news
+- `4137c9d` Expand AI loan market and transfer news
 
-The latest in-progress feature phase is Transfer News 2.0 + AI Market Polish.
+The latest completed feature phase is Transfer News 2.0 + AI Market Polish.
 
 ## Current Roadmap
 
