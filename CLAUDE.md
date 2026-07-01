@@ -217,6 +217,7 @@ Design target:
 - `686b64e` Improve calendar flow and player profiles
 - `ede7f0a` Add contracts and morale systems
 - `298e0b9` Add youth academy and scouting network
+- `c0e3763` Fix rating potentials and profile labels
 
 The latest completed feature phase is Youth Academy + Scouting Network.
 
