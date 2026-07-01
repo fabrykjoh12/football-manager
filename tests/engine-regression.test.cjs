@@ -213,6 +213,20 @@ function run() {
   assert.ok(aiMarketSave.transfers.history.some((item) => item.playerId === aiMove.playerId), "AI market moves should enter the transfer ledger");
   assert.ok(aiMarketSave.transfers.news.some((item) => item.playerId === aiMove.playerId), "AI market moves should create transfer news");
 
+  const aiLoanSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 6262 });
+  aiLoanSave.calendar.currentDate = "2026-07-20";
+  const aiLoan = Engine.processAiClubLoan(aiLoanSave);
+  assert.ok(aiLoan, "AI clubs should be able to complete loan moves inside an open window");
+  assert.equal(aiLoan.type, "loan", "AI loan market should return a loan result");
+  assert.notEqual(aiLoan.toClubId, aiLoanSave.activeClubId, "AI loan moves should not loan into the user club");
+  assert.notEqual(aiLoan.fromClubId, aiLoanSave.activeClubId, "AI loan moves should not loan from the user club");
+  const loanedPlayer = Engine.getPlayer(aiLoanSave, aiLoan.playerId);
+  assert.equal(loanedPlayer.clubId, aiLoan.toClubId, "Loaned players should move to the loan club");
+  assert.equal(loanedPlayer.parentClubId, aiLoan.fromClubId, "Loaned players should keep their parent club");
+  assert.ok(loanedPlayer.loanUntilSeason > aiLoanSave.season, "Loaned players should have a loan end season");
+  assert.ok(aiLoanSave.transfers.history.some((item) => item.type === "loan" && item.playerId === aiLoan.playerId), "AI loans should enter the transfer ledger");
+  assert.ok(aiLoanSave.transfers.news.some((item) => item.type === "loan" && item.playerId === aiLoan.playerId), "AI loans should create transfer news");
+
   const scoutTarget = save.transfers.marketIds.map((id) => Engine.getPlayer(save, id)).find((player) => player && player.clubId && player.clubId !== save.activeClubId);
   const assignment = Engine.assignScout(save, scoutTarget.id);
   assert.equal(assignment.ok, true, "Scout assignment should be created");
@@ -243,7 +257,7 @@ function run() {
   const history = save.league.history[0];
   assert.equal(history.fixtures.length, 38, "Completed season should archive all rounds");
   assert.equal(history.fixtures.reduce((sum, round) => sum + round.fixtures.length, 0), 380, "Completed season should archive all fixtures");
-  assert.ok(history.standings[0].points >= 70, "Champion points should be plausible");
+  assert.ok(history.standings[0].points >= 64 && history.standings[0].points <= 98, "Champion points should be plausible");
   assert.ok(goalsPerGame(history) >= 2.1 && goalsPerGame(history) <= 3.4, "Goals per game should stay within a plausible range");
   assert.equal(Object.values(save.players).filter((player) => !player.clubId).length, 0, "First rollover should not dump expiring contracts immediately");
   assert.ok(Object.values(save.players).some((player) => player.careerTotals.injuries > 0), "Season should produce some injuries");

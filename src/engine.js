@@ -2246,9 +2246,15 @@
   function maybeProcessDailyAiClubTransfer(state) {
     const window = transferWindowStatus(state);
     if (!window.isOpen) return null;
-    const chance = window.isDeadlineDay ? 0.32 : 0.09;
+    const chance = dailyAiMarketChance(state, window);
     if (random(state) > chance) return null;
-    return processAiClubTransfer(state, { allowRumor: true });
+    return processAiClubMarketActivity(state, {
+      allowRumor: true,
+      allowBid: true,
+      allowFailed: true,
+      allowDeadlineStory: true,
+      allowLoan: true
+    });
   }
 
   function simulateFixturesForDate(state, date) {
@@ -3007,6 +3013,21 @@
     return record;
   }
 
+  function leaguePosition(state, clubId) {
+    const table = calculateTable(state);
+    const index = table.findIndex((row) => row.clubId === clubId);
+    return index >= 0 ? index + 1 : table.length;
+  }
+
+  function isDirectMarketRival(state, clubId) {
+    const activeClub = getClub(state, state.activeClubId);
+    const club = getClub(state, clubId);
+    if (!activeClub || !club || club.id === activeClub.id) return false;
+    const reputationRival = Math.abs((club.reputation || 0) - (activeClub.reputation || 0)) <= 5;
+    const positionRival = Math.abs(leaguePosition(state, club.id) - leaguePosition(state, activeClub.id)) <= 4;
+    return reputationRival || positionRival;
+  }
+
   function addTransferNewsFromRecord(state, transferRecord) {
     if (!["transfer", "loan", "free-agent"].includes(transferRecord.type)) return null;
     const player = getPlayer(state, transferRecord.playerId) || { name: transferRecord.playerName, currentAbility: 0, position: "Player" };
@@ -3014,7 +3035,9 @@
     const toClub = transferRecord.toClubId ? getClub(state, transferRecord.toClubId) : null;
     if (!player || !toClub) return null;
     const activeInvolved = transferRecord.fromClubId === state.activeClubId || transferRecord.toClubId === state.activeClubId;
+    const rivalInvolved = isDirectMarketRival(state, transferRecord.fromClubId) || isDirectMarketRival(state, transferRecord.toClubId);
     const major = activeInvolved || transferRecord.fee >= 22000000 || player.currentAbility >= 80;
+    const rivalAlert = rivalInvolved && (transferRecord.fee >= 8000000 || player.currentAbility >= 72 || transferRecord.type === "loan");
     let title = "";
     let body = "";
     let tone = "blue";
@@ -3034,7 +3057,7 @@
     const item = addTransferNews(state, {
       type: transferRecord.type,
       tone,
-      priority: major ? "major" : "normal",
+      priority: major ? "major" : rivalAlert ? "rival" : "normal",
       title,
       body,
       playerId: transferRecord.playerId,
@@ -3042,10 +3065,43 @@
       toClubId: transferRecord.toClubId,
       fee: transferRecord.fee
     });
-    if (major && !activeInvolved) {
-      addInbox(state, "Market News", `${title}. ${body}`);
+    if ((major || rivalAlert) && !activeInvolved) {
+      addInbox(state, rivalAlert ? "Rival Market News" : "Market News", `${title}. ${body}`);
     }
     return item;
+  }
+
+  function fixturesInWindow(state, clubId, days) {
+    const currentDate = state.calendar ? state.calendar.currentDate : createSeasonCalendar(state.season).currentDate;
+    return state.league.schedule.reduce((count, roundData) => {
+      if (!roundData || !roundData.date) return count;
+      const distance = daysBetween(currentDate, roundData.date);
+      if (distance < 0 || distance > days) return count;
+      const hasClub = roundData.fixtures.some((fixture) => fixture.homeClubId === clubId || fixture.awayClubId === clubId);
+      return count + (hasClub ? 1 : 0);
+    }, 0);
+  }
+
+  function aiClubMarketUrgency(state, club, report) {
+    const needs = report || recruitmentNeedReport(state, club.id);
+    const primaryNeed = needs.primary ? needs.primary.score : 0;
+    const squad = clubPlayers(state, club.id);
+    const injuries = squad.filter((player) => isInjured(state, player)).length;
+    const lowFitness = squad.filter((player) => player.fitness < 55 && !isUnavailable(state, player)).length;
+    const fixtureLoad = fixturesInWindow(state, club.id, 14);
+    const position = leaguePosition(state, club.id);
+    const ambition = clamp((club.reputation || 65) - 58, 0, 35);
+    const pressure = position <= 6 ? 14 : position >= 15 ? 11 : 5;
+    const budgetFlex = clamp(club.transferBudget / 22000000, 0, 16);
+    return round(primaryNeed * 0.55 + injuries * 9 + lowFitness * 2.5 + Math.max(0, fixtureLoad - 2) * 4 + ambition + pressure + budgetFlex, 1);
+  }
+
+  function dailyAiMarketChance(state, window) {
+    const base = window.isDeadlineDay ? 0.34 : window.daysRemaining <= 7 ? 0.16 : 0.08;
+    const injuredClubs = state.league.clubs.filter((club) => club.id !== state.activeClubId && clubPlayers(state, club.id).some((player) => isInjured(state, player))).length;
+    const congestedClubs = state.league.clubs.filter((club) => club.id !== state.activeClubId && fixturesInWindow(state, club.id, 14) >= 3).length;
+    const pressureLift = clamp((injuredClubs + congestedClubs) * 0.006, 0, 0.06);
+    return clamp(base + pressureLift, 0.04, window.isDeadlineDay ? 0.44 : 0.22);
   }
 
   function sellerCanLosePlayer(state, seller, player) {
@@ -3102,6 +3158,27 @@
       .sort((a, b) => b.score - a.score || b.player.currentAbility - a.player.currentAbility);
   }
 
+  function aiBuyerPool(state, options) {
+    const forcedBuyer = options && options.buyerClubId ? getClub(state, options.buyerClubId) : null;
+    const candidates = forcedBuyer ? [forcedBuyer] : state.league.clubs;
+    return shuffle(state, candidates.filter((club) => {
+      if (!club || club.id === state.activeClubId || club.transferBudget < 250000) return false;
+      return weeklyWageSpend(state, club.id) < club.wageBudget;
+    }))
+      .map((club) => {
+        const report = recruitmentNeedReport(state, club.id);
+        return { club, report, urgency: aiClubMarketUrgency(state, club, report) + randomFloat(state, 0, 12) };
+      })
+      .sort((a, b) => b.urgency - a.urgency);
+  }
+
+  function aiNeedList(report, options) {
+    const needs = options && options.needPosition
+      ? report.needs.filter((need) => need.position === options.needPosition)
+      : report.needs.filter((need) => need.score >= 24).slice(0, 5);
+    return needs.length ? needs : report.needs.slice(0, 3);
+  }
+
   function addAiTransferRumor(state, buyer, player, need) {
     const seller = getClub(state, player.clubId);
     return addTransferNews(state, {
@@ -3115,6 +3192,127 @@
       toClubId: buyer.id,
       fee: aiEstimatedTransferCost(state, player)
     });
+  }
+
+  function addAiBidNews(state, buyer, player, need, fee) {
+    const seller = getClub(state, player.clubId);
+    return addTransferNews(state, {
+      type: "bid",
+      tone: "blue",
+      priority: player.currentAbility >= 78 || isDirectMarketRival(state, buyer.id) ? "rival" : "normal",
+      title: `${buyer.name} bid for ${player.name}`,
+      body: `${seller ? seller.name : "The selling club"} are considering ${formatMoney(fee)} for a ${need.position} target.`,
+      playerId: player.id,
+      fromClubId: seller ? seller.id : null,
+      toClubId: buyer.id,
+      fee
+    });
+  }
+
+  function addAiFailedBidNews(state, buyer, player, need, fee, reason) {
+    const seller = getClub(state, player.clubId);
+    return addTransferNews(state, {
+      type: "failed-bid",
+      tone: "red",
+      priority: player.currentAbility >= 78 || isDirectMarketRival(state, buyer.id) ? "rival" : "normal",
+      title: `${buyer.name} miss out on ${player.name}`,
+      body: `${seller ? seller.name : "The selling club"} walked away from ${formatMoney(fee)}. ${reason || `${buyer.name} still want ${need.position} depth.`}`,
+      playerId: player.id,
+      fromClubId: seller ? seller.id : null,
+      toClubId: buyer.id,
+      fee
+    });
+  }
+
+  function addDeadlineMarketPulse(state) {
+    const window = transferWindowStatus(state);
+    if (!window.isDeadlineDay) return null;
+    const buyers = aiBuyerPool(state, {});
+    const urgent = buyers.find((item) => item.urgency >= 58) || buyers[0];
+    if (!urgent) return null;
+    const need = urgent.report.primary || urgent.report.needs[0];
+    return addTransferNews(state, {
+      type: "deadline",
+      tone: "amber",
+      priority: isDirectMarketRival(state, urgent.club.id) ? "rival" : "normal",
+      title: `${urgent.club.name} working late`,
+      body: `${urgent.club.name} are pushing for ${need.position} cover before the ${window.window.name.toLowerCase()} closes.`,
+      toClubId: urgent.club.id
+    });
+  }
+
+  function sellerCanLoanPlayer(state, seller, player) {
+    if (!seller || !player || seller.id === state.activeClubId || player.loanUntilSeason) return false;
+    if ((seller.squad || []).length <= 22) return false;
+    const squad = clubPlayers(state, seller.id);
+    const depth = squad.filter((item) => item.position === player.position || (item.secondaryPositions || []).includes(player.position)).length;
+    const roleRank = squad.slice().sort((a, b) => b.currentAbility - a.currentAbility).findIndex((item) => item.id === player.id);
+    const sellerStrength = teamStrength(state, seller.id).overall;
+    if (player.realWorld && player.source && (player.source.cost >= 55 || player.source.starts >= 14 || player.source.minutes >= 1200)) return false;
+    if (roleRank >= 0 && roleRank < 9) return false;
+    if (player.currentAbility >= sellerStrength - 2) return false;
+    const growthRoom = (player.potential || player.currentAbility) - player.currentAbility;
+    const backup = roleRank >= 13 || player.currentAbility < sellerStrength - 6;
+    const developmentLoan = player.age <= 22 && growthRoom >= 7 && player.currentAbility < sellerStrength - 4;
+    return depth > desiredDepth(player.position) && (backup || developmentLoan);
+  }
+
+  function aiLoanCandidateScore(state, buyer, need, player) {
+    const positions = [player.position].concat(player.secondaryPositions || []);
+    const positionFit = positions.includes(need.position) ? 22 : -10;
+    const development = clamp((player.potential || player.currentAbility) - player.currentAbility, 0, 22);
+    const ageFit = player.age <= 20 ? 13 : player.age <= 23 ? 10 : player.age <= 26 ? 3 : -8;
+    const roleFit = clamp((player.currentAbility - Math.max(48, buyer.reputation - 20)) * 1.1, -16, 24);
+    const wageFit = clamp(18 - player.wage / Math.max(1, buyer.wageBudget - weeklyWageSpend(state, buyer.id)) * 18, -12, 18);
+    return round(need.score * 0.45 + positionFit + development * 0.55 + ageFit + roleFit + wageFit, 1);
+  }
+
+  function aiLoanCandidates(state, buyer, need) {
+    const wageRoom = Math.max(0, buyer.wageBudget - weeklyWageSpend(state, buyer.id));
+    return Object.values(state.players)
+      .filter((player) => {
+        if (!player || !player.clubId || player.clubId === buyer.id || player.clubId === state.activeClubId || player.loanUntilSeason) return false;
+        const seller = getClub(state, player.clubId);
+        if (!seller || seller.id === state.activeClubId || !sellerCanLoanPlayer(state, seller, player)) return false;
+        const positions = [player.position].concat(player.secondaryPositions || []);
+        if (!positions.includes(need.position)) return false;
+        if (player.wage > wageRoom) return false;
+        return player.currentAbility >= Math.max(46, buyer.reputation - 22);
+      })
+      .map((player) => ({ player, score: aiLoanCandidateScore(state, buyer, need, player) }))
+      .sort((a, b) => b.score - a.score || b.player.potential - a.player.potential);
+  }
+
+  function addAiLoanRumor(state, buyer, player, need) {
+    const seller = getClub(state, player.clubId);
+    return addTransferNews(state, {
+      type: "loan-rumor",
+      tone: "amber",
+      priority: isDirectMarketRival(state, buyer.id) ? "rival" : "normal",
+      title: `${buyer.name} discuss ${player.name} loan`,
+      body: `${buyer.name} want short-term ${need.position} cover and ${seller ? seller.name : "the parent club"} could sanction a loan.`,
+      playerId: player.id,
+      fromClubId: seller ? seller.id : null,
+      toClubId: buyer.id,
+      fee: 0
+    });
+  }
+
+  function completeAiClubLoan(state, buyer, player) {
+    const seller = getClub(state, player.clubId);
+    if (!seller || seller.id === state.activeClubId || buyer.id === state.activeClubId) return null;
+    if (weeklyWageSpend(state, buyer.id) + player.wage > buyer.wageBudget) return null;
+    completeLoanMove(state, player.id, seller.id, buyer.id);
+    return {
+      type: "loan",
+      playerId: player.id,
+      playerName: player.name,
+      fromClubId: seller.id,
+      toClubId: buyer.id,
+      fee: 0,
+      wage: player.wage,
+      recordId: state.transfers.history[0] ? state.transfers.history[0].id : null
+    };
   }
 
   function completeAiClubTransfer(state, buyer, player, estimatedFee) {
@@ -3167,15 +3365,11 @@
     ensureTransferState(state);
     const window = transferWindowStatus(state);
     if (!window.isOpen) return null;
-    const buyers = shuffle(state, state.league.clubs.filter((club) => {
-      if (!club || club.id === state.activeClubId || club.transferBudget < 750000) return false;
-      return weeklyWageSpend(state, club.id) < club.wageBudget;
-    }));
-    for (const buyer of buyers) {
-      const report = recruitmentNeedReport(state, buyer.id);
-      const needs = report.needs.filter((need) => need.score >= 24).slice(0, 5);
-      const fallbackNeeds = needs.length ? needs : report.needs.slice(0, 3);
-      for (const need of fallbackNeeds) {
+    const buyers = aiBuyerPool(state, options || {});
+    for (const item of buyers) {
+      const buyer = item.club;
+      const needs = aiNeedList(item.report, options || {});
+      for (const need of needs) {
         const candidates = aiTransferCandidates(state, buyer, need);
         if (candidates.length) {
           const target = pick(state, candidates.slice(0, Math.min(5, candidates.length)));
@@ -3188,6 +3382,25 @@
               newsId: addAiTransferRumor(state, buyer, target.player, need).id
             };
           }
+          if (options && options.allowBid && random(state) < (window.isDeadlineDay ? 0.12 : 0.18)) {
+            return {
+              type: "bid",
+              playerId: target.player.id,
+              fromClubId: target.player.clubId,
+              toClubId: buyer.id,
+              newsId: addAiBidNews(state, buyer, target.player, need, target.estimatedFee).id
+            };
+          }
+          if (options && options.allowFailed && random(state) < (window.isDeadlineDay ? 0.16 : 0.1)) {
+            const reason = target.estimatedFee > target.player.value * 1.2 ? "The asking price stayed too high." : "Personal terms slowed the move.";
+            return {
+              type: "failed-bid",
+              playerId: target.player.id,
+              fromClubId: target.player.clubId,
+              toClubId: buyer.id,
+              newsId: addAiFailedBidNews(state, buyer, target.player, need, target.estimatedFee, reason).id
+            };
+          }
           const completed = completeAiClubTransfer(state, buyer, target.player, target.estimatedFee);
           if (completed) return completed;
         }
@@ -3195,6 +3408,59 @@
         if (freeAgent) return freeAgent;
       }
     }
+    return null;
+  }
+
+  function processAiClubLoan(state, options) {
+    ensureTransferState(state);
+    const window = transferWindowStatus(state);
+    if (!window.isOpen) return null;
+    const buyers = aiBuyerPool(state, options || {});
+    for (const item of buyers) {
+      const buyer = item.club;
+      const needs = aiNeedList(item.report, options || {});
+      for (const need of needs) {
+        const candidates = aiLoanCandidates(state, buyer, need);
+        if (!candidates.length) continue;
+        const target = pick(state, candidates.slice(0, Math.min(5, candidates.length)));
+        if (options && options.allowRumor && random(state) < (window.isDeadlineDay ? 0.1 : 0.2)) {
+          return {
+            type: "loan-rumor",
+            playerId: target.player.id,
+            fromClubId: target.player.clubId,
+            toClubId: buyer.id,
+            newsId: addAiLoanRumor(state, buyer, target.player, need).id
+          };
+        }
+        if (options && options.allowFailed && random(state) < (window.isDeadlineDay ? 0.12 : 0.08)) {
+          return {
+            type: "failed-bid",
+            playerId: target.player.id,
+            fromClubId: target.player.clubId,
+            toClubId: buyer.id,
+            newsId: addAiFailedBidNews(state, buyer, target.player, need, 0, "The parent club wanted stronger squad-cover guarantees.").id
+          };
+        }
+        const completed = completeAiClubLoan(state, buyer, target.player);
+        if (completed) return completed;
+      }
+    }
+    return null;
+  }
+
+  function processAiClubMarketActivity(state, options) {
+    const window = transferWindowStatus(state);
+    if (!window.isOpen) return null;
+    if (options && options.allowDeadlineStory && window.isDeadlineDay && random(state) < 0.14) {
+      const pulse = addDeadlineMarketPulse(state);
+      if (pulse) return { type: "deadline", newsId: pulse.id, toClubId: pulse.toClubId };
+    }
+    const loanFirst = options && options.preferLoan ? true : options && options.allowLoan && random(state) < (window.isDeadlineDay ? 0.36 : 0.28);
+    const first = loanFirst ? processAiClubLoan : processAiClubTransfer;
+    const second = loanFirst ? processAiClubTransfer : processAiClubLoan;
+    const firstResult = first(state, options || {});
+    if (firstResult) return firstResult;
+    if (options && options.allowLoan !== false) return second(state, options || {});
     return null;
   }
 
@@ -3953,6 +4219,8 @@
     negotiationProfile,
     deadlineDayReport,
     processAiClubTransfer,
+    processAiClubLoan,
+    processAiClubMarketActivity,
     shortlistPlayers,
     isShortlisted,
     addToShortlist,

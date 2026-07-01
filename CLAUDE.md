@@ -157,6 +157,16 @@ Design target:
 - Transfers screen has a latest-news panel with deals, rumors, free-agent moves, dates, fees, and context.
 - Daily simulation can surface AI market activity during transfer windows, with more activity on deadline day.
 
+### Transfer News 2.0 + AI Market Polish
+
+- AI clubs can now complete non-user loan moves for prospects, backups, and short-term squad cover.
+- AI loan logic protects established first-team players by checking seller depth, role rank, ability, real-world starts/minutes/cost, and development profile.
+- Daily market activity can produce permanent transfers, loans, bids, failed bids, rumors, loan rumors, free-agent moves, and deadline-day market stories.
+- AI buyer urgency now factors squad need, injuries, low fitness, fixture congestion, league pressure, reputation, and budget flexibility.
+- Rival clubs and major moves can create inbox alerts.
+- Transfer news labels now distinguish bids, failed bids, loan rumors, and deadline stories.
+- Regression tests cover AI loan movement, parent-club tracking, loan history, and loan news.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
@@ -165,24 +175,22 @@ Design target:
 - `402c010` Add negotiation intelligence and deadline day panel
 - `8b9be63` Add AI transfer activity and market news
 
-The latest completed feature phase is AI Club Movement + Transfer News.
+The latest in-progress feature phase is Transfer News 2.0 + AI Market Polish.
 
 ## Current Roadmap
 
-### Next Phase: Transfer News 2.0 + AI Market Polish
+### Next Phase: Contracts + Morale
 
 Planned work:
 
-- AI loan market for prospects, squad players, and emergency depth.
-- More transfer rumors, bids, failed moves, and deadline-day stories.
-- Inbox messages for major market activity and deals involving direct rivals.
-- Better counter-offer reasons and player rejection reasons.
-- Market activity tuned by club ambition, league position, injuries, and fixture congestion.
+- Contract expiry market opportunities.
+- Player morale and playing-time promises.
+- Richer player contract negotiation reasons.
+- Squad happiness affected by minutes, role, results, injuries, and transfer speculation.
+- Inbox stories for unhappy players, expiring contracts, and promise pressure.
 
 ### Later Phases
 
-- Contract expiry market opportunities.
-- Player morale and playing-time promises.
 - Youth academy and intake.
 - Staff hiring and scouting network.
 - More detailed tactics roles/instructions.

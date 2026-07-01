@@ -915,7 +915,7 @@
                 player ? player.position : ""
               ].filter(Boolean).join(" | ");
               return `
-                <article class="transfer-news-item ${item.priority === "major" ? "major" : ""}">
+                <article class="transfer-news-item ${item.priority === "major" || item.priority === "rival" ? "major" : ""}">
                   <div>
                     <span class="badge ${item.tone || "blue"}">${transferNewsLabel(item.type)}</span>
                     <small>${escapeHtml(meta)}</small>
@@ -936,7 +936,11 @@
       transfer: "Deal",
       loan: "Loan",
       "free-agent": "Free Agent",
-      rumor: "Rumor"
+      rumor: "Rumor",
+      "loan-rumor": "Loan Rumor",
+      bid: "Bid",
+      "failed-bid": "Failed Bid",
+      deadline: "Deadline"
     };
     return labels[type] || "News";
   }
