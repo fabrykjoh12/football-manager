@@ -358,7 +358,7 @@
     line: "standard",
     focus: "mixed"
   };
-  const RATING_MODEL_VERSION = 3;
+  const RATING_MODEL_VERSION = 4;
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -1173,8 +1173,13 @@
       Object.assign(player.attributes, eafcAttributePatch(player.position, rating));
       normalizeAttributeSet(player.attributes, player.position, rating.o);
       player.currentAbility = Math.round(clamp(rating.o, 1, 99));
-      const potentialLift = player.age <= 21 ? 8 : player.age <= 24 ? 5 : player.age <= 27 ? 2 : 0;
-      player.potential = Math.round(clamp(Math.max(player.potential || player.currentAbility, player.currentAbility + potentialLift), player.currentAbility, 99));
+      const ratedPotential = Number(rating.p || rating.pot || rating.potential);
+      if (Number.isFinite(ratedPotential)) {
+        player.potential = Math.round(clamp(ratedPotential, player.currentAbility, 99));
+      } else {
+        const potentialLift = player.age <= 21 ? 8 : player.age <= 24 ? 5 : player.age <= 27 ? 2 : 0;
+        player.potential = Math.round(clamp(Math.max(player.potential || player.currentAbility, player.currentAbility + potentialLift), player.currentAbility, 99));
+      }
       player.ratingModelVersion = RATING_MODEL_VERSION;
       player.displayName = footballDisplayName(rating.c || rating.n || player.name);
       player.source = player.source || {};
@@ -1182,8 +1187,9 @@
         matched: true,
         name: rating.n,
         commonName: rating.c || null,
-        source: Data.FC26_RATINGS_SOURCE.name,
+        source: "Matched rating profile",
         ovr: rating.o,
+        pot: player.potential,
         pac: rating.pac,
         sho: rating.sho,
         pas: rating.pas,
@@ -1198,7 +1204,7 @@
     player.source = player.source || {};
     player.source.fc26 = {
       matched: false,
-      source: "Generated EAFC-style projection",
+      source: "Generated projection",
       ...fc26StyleStats(player)
     };
     return false;
@@ -1208,9 +1214,10 @@
     if (player && player.source && player.source.fc26 && Number.isFinite(player.source.fc26.ovr)) {
       const rating = player.source.fc26;
       return {
-        source: rating.source || "EAFC-style",
+        source: rating.source || "Rating profile",
         matched: !!rating.matched,
         ovr: rating.ovr,
+        pot: rating.pot || player.potential,
         pac: rating.pac,
         sho: rating.sho,
         pas: rating.pas,
@@ -1223,9 +1230,10 @@
     const a = player.attributes || {};
     if (player.position === "GK") {
       return {
-        source: "Generated EAFC-style projection",
+        source: "Generated projection",
         matched: false,
         ovr: player.currentAbility,
+        pot: player.potential,
         pac: Math.round(averageNumbers([a.diving, a.reflexes], player.currentAbility)),
         sho: Math.round(averageNumbers([a.handling, a.oneOnOnes], player.currentAbility)),
         pas: Math.round(averageNumbers([a.kicking, a.distribution, a.passing], player.currentAbility)),
@@ -1235,9 +1243,10 @@
       };
     }
     return {
-      source: "Generated EAFC-style projection",
+      source: "Generated projection",
       matched: false,
       ovr: player.currentAbility,
+      pot: player.potential,
       pac: Math.round(averageNumbers([a.pace, a.acceleration], player.currentAbility)),
       sho: Math.round(averageNumbers([a.finishing, a.longShots, a.composure], player.currentAbility)),
       pas: Math.round(averageNumbers([a.passing, a.vision, a.crossing], player.currentAbility)),
@@ -4985,7 +4994,7 @@
     player.development.push(snapshotDevelopment(player, state.season || 1));
     player.source.fc26 = {
       matched: false,
-      source: "Generated EAFC-style projection",
+      source: "Generated projection",
       ...fc26StyleStats(player)
     };
     state.players[player.id] = player;
@@ -5633,7 +5642,7 @@
         player.source = player.source || {};
         player.source.fc26 = {
           matched: false,
-          source: "Generated EAFC-style projection",
+          source: "Generated projection",
           ...fc26StyleStats(player)
         };
       }

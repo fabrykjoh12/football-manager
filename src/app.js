@@ -1754,6 +1754,7 @@
 
   function renderFc26Stats(stats) {
     const items = [
+      ["POT", stats.pot],
       ["PAC", stats.pac],
       ["SHO", stats.sho],
       ["PAS", stats.pas],
@@ -1764,9 +1765,9 @@
     return `
       <div class="fc26-card">
         <div>
-          <span>FC26 Style</span>
+          <span>Rating Profile</span>
           <strong>${stats.ovr}</strong>
-          <small>${escapeHtml(stats.matched ? "EA SPORTS FC 26 rating" : "Generated projection")}</small>
+          <small>${escapeHtml(stats.matched ? "Matched rating" : "Generated projection")}</small>
         </div>
         <div class="fc26-stat-grid">
           ${items.map(([label, value]) => `

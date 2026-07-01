@@ -91,15 +91,15 @@ Design target:
 - Continue Day now advances through quiet days until a match, inbox event, transfer story, offer, market move, or season end.
 - Daily club events can now create training, morale, media, or minor-knock stories that affect players.
 
-### FC26 Ratings + Player Profiles
+### Rating Profiles + Player Profiles
 
-- Added a compact EA SPORTS FC 26 Premier League ratings overlay from EA's public ratings page.
-- Matched players receive FC26-style OVR/PAC/SHO/PAS/DRI/DEF/PHY values and more realistic current ability.
-- Unmatched players receive generated EAFC-style projection stats from internal attributes.
+- Added a compact Premier League rating profile overlay for OVR/POT/PAC/SHO/PAS/DRI/DEF/PHY.
+- Matched players receive more realistic current ability, potential, and profile stats.
+- Unmatched players receive generated projection stats from internal attributes.
 - Lineups, tables, ratings, leaders, scouting, transfers, and match-centre names now use common football display names.
-- Player profiles keep full names and show FC26-style stats, source/FPL stats where available, attributes, role fit, career history, and development.
+- Player profiles keep full names and show neutral rating profiles, source/FPL stats where available, attributes, role fit, career history, and development.
 - Player profile modals are available from profile-name buttons across the app.
-- Existing saves migrate display names and FC26-style metadata.
+- Existing saves migrate display names, rating metadata, and matched potentials.
 
 ### Training + Match Preparation
 

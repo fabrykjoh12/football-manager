@@ -66,11 +66,13 @@ function run() {
   const saka = Object.values(save.players).find((player) => player.name === "Bukayo Saka");
   assert.ok(saka, "Premier League seed should include real Arsenal players");
   assert.equal(Engine.playerDisplayName(saka), "Saka", "Lineup display names should use common football names");
-  assert.equal(saka.currentAbility, 88, "FC26 rating overlay should update matched current ability");
+  assert.equal(saka.currentAbility, 88, "Rating overlay should update matched current ability");
+  assert.equal(saka.potential, 90, "Matched rating overlay should update player potential");
   const sakaFc26 = Engine.fc26StyleStats(saka);
-  assert.equal(sakaFc26.matched, true, "Matched players should keep FC26 rating metadata");
-  assert.equal(sakaFc26.ovr, 88, "FC26-style stats should expose overall rating");
-  assert.equal(sakaFc26.pac, 84, "FC26-style stats should expose pace rating");
+  assert.equal(sakaFc26.matched, true, "Matched players should keep rating metadata");
+  assert.equal(sakaFc26.ovr, 88, "Rating profile should expose overall rating");
+  assert.equal(sakaFc26.pot, 90, "Rating profile should expose potential");
+  assert.equal(sakaFc26.pac, 84, "Rating profile should expose pace rating");
   assert.equal(saka.squadRole, "star", "Elite real-world starters should receive star-player roles");
   assert.ok(Engine.playerHappinessReport(save, saka.id).score >= 50, "Early-season happiness should not punish players before matches are played");
   const roleChange = Engine.setSquadRole(save, saka.id, "important");
@@ -79,10 +81,13 @@ function run() {
   Engine.setSquadRole(save, saka.id, "star");
   const legacySave = Engine.cloneState(save);
   legacySave.version = "1.2.0";
+  legacySave.players[saka.id].ratingModelVersion = 3;
+  legacySave.players[saka.id].potential = 96;
   delete legacySave.league.clubs[0].tactics;
   const migratedLegacy = Engine.migrateState(legacySave);
   assert.equal(migratedLegacy.league.clubs[0].tactics.focus, "mixed", "Migration should backfill club tactics");
   assert.ok(migratedLegacy.academy.prospects.length > 0, "Migration should backfill academy state");
+  assert.equal(migratedLegacy.players[saka.id].potential, 90, "Migration should reapply matched player potentials");
 
   const academySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 3030 });
   const academyProspect = Engine.academyReport(academySave).prospects[0].prospect;
