@@ -163,8 +163,9 @@ Design target:
 - `3355836` Add recruitment centre and shortlist
 - `7f60dbd` Add transfer windows and project roadmap
 - `402c010` Add negotiation intelligence and deadline day panel
+- `8b9be63` Add AI transfer activity and market news
 
-The current uncommitted phase before this document update was AI Club Movement + Transfer News.
+The latest completed feature phase is AI Club Movement + Transfer News.
 
 ## Current Roadmap
 
