@@ -216,6 +216,7 @@ Design target:
 - `4137c9d` Expand AI loan market and transfer news
 - `686b64e` Improve calendar flow and player profiles
 - `ede7f0a` Add contracts and morale systems
+- `298e0b9` Add youth academy and scouting network
 
 The latest completed feature phase is Youth Academy + Scouting Network.
 
