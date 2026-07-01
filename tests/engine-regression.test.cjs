@@ -182,6 +182,21 @@ function run() {
   assert.equal(counter.ok, true, "Affordable counter offer should be acceptable");
   assert.equal(Engine.getPlayer(save, transferTarget.id).clubId, save.activeClubId, "Accepted counter should transfer the player");
 
+  const windowSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 5151 });
+  const windowClub = Engine.getClub(windowSave, windowSave.activeClubId);
+  const windowTarget = windowSave.transfers.marketIds.map((id) => Engine.getPlayer(windowSave, id)).find((player) => player && player.clubId);
+  windowClub.transferBudget = 500000000;
+  windowClub.wageBudget = 20000000;
+  windowSave.calendar.currentDate = "2026-09-10";
+  assert.equal(Engine.transferWindowStatus(windowSave).isOpen, false, "September should be outside the transfer window");
+  const preAgreement = Engine.makeTransferOffer(windowSave, windowTarget.id, windowTarget.value * 2, windowTarget.wage * 2);
+  assert.equal(preAgreement.preAgreement, true, "Accepted outside-window deals should become pre-agreements");
+  assert.notEqual(Engine.getPlayer(windowSave, windowTarget.id).clubId, windowSave.activeClubId, "Pre-agreements should not register immediately");
+  windowSave.calendar.currentDate = "2027-01-01";
+  const processedAgreements = Engine.processTransferPreAgreements(windowSave);
+  assert.ok(processedAgreements.length > 0, "Opening the next window should process pre-agreements");
+  assert.equal(Engine.getPlayer(windowSave, windowTarget.id).clubId, windowSave.activeClubId, "Pre-agreements should register when the window opens");
+
   const scoutTarget = save.transfers.marketIds.map((id) => Engine.getPlayer(save, id)).find((player) => player && player.clubId && player.clubId !== save.activeClubId);
   const assignment = Engine.assignScout(save, scoutTarget.id);
   assert.equal(assignment.ok, true, "Scout assignment should be created");

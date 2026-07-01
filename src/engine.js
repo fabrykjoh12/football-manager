@@ -273,6 +273,55 @@
     };
   }
 
+  function transferWindowsForSeason(season) {
+    const year = BASE_SEASON_YEAR + Math.max(0, (season || 1) - 1);
+    return [
+      {
+        key: "summer",
+        name: "Summer Window",
+        opensOn: dateString(year, 7, 1),
+        closesOn: dateString(year, 8, 31)
+      },
+      {
+        key: "winter",
+        name: "January Window",
+        opensOn: dateString(year + 1, 1, 1),
+        closesOn: dateString(year + 1, 2, 1)
+      }
+    ];
+  }
+
+  function transferWindowStatus(state, dateValue) {
+    const calendar = ensureCalendar(state);
+    const date = dateValue || calendar.currentDate;
+    const windows = transferWindowsForSeason(state.season || 1);
+    const openWindow = windows.find((window) => compareDates(date, window.opensOn) >= 0 && compareDates(date, window.closesOn) <= 0);
+    if (openWindow) {
+      const daysRemaining = Math.max(0, daysBetween(date, openWindow.closesOn));
+      return {
+        isOpen: true,
+        window: openWindow,
+        label: openWindow.name,
+        opensOn: openWindow.opensOn,
+        closesOn: openWindow.closesOn,
+        daysRemaining,
+        isDeadlineDay: daysRemaining <= 1,
+        nextWindow: openWindow
+      };
+    }
+    const upcoming = windows.find((window) => compareDates(window.opensOn, date) > 0) || transferWindowsForSeason((state.season || 1) + 1)[0];
+    return {
+      isOpen: false,
+      window: null,
+      label: "Closed",
+      opensOn: upcoming.opensOn,
+      closesOn: upcoming.closesOn,
+      daysRemaining: Math.max(0, daysBetween(date, upcoming.opensOn)),
+      isDeadlineDay: false,
+      nextWindow: upcoming
+    };
+  }
+
   function createStateShell(seed) {
     const calendar = createSeasonCalendar(1);
     return {
@@ -318,6 +367,7 @@
         marketIds: [],
         offers: [],
         shortlist: [],
+        preAgreements: [],
         history: [],
         freeAgentIds: []
       },
@@ -2186,7 +2236,9 @@
   }
 
   function maybeGenerateDailyAiOffer(state) {
-    if (random(state) > 0.055) return null;
+    const window = transferWindowStatus(state);
+    const chance = window.isOpen ? window.isDeadlineDay ? 0.22 : 0.085 : 0.025;
+    if (random(state) > chance) return null;
     return maybeGenerateAiOffer(state);
   }
 
@@ -2231,6 +2283,7 @@
 
     const processedDate = calendar.currentDate;
     processInjuryReturns(state);
+    processTransferPreAgreements(state);
     recoverSquadsDaily(state);
     updateMatchPrepFamiliarity(state);
     processScoutingAssignmentsDaily(state);
@@ -2268,6 +2321,7 @@
       return finishSeason(state);
     }
     if (roundData.date) state.calendar.currentDate = roundData.date;
+    processTransferPreAgreements(state);
     let activeMatch = null;
     roundData.fixtures.forEach((fixture) => {
       const result = simulateFixture(state, fixture);
@@ -2282,6 +2336,7 @@
       state.calendar.day = Math.max(state.calendar.day || 1, daysBetween(state.calendar.preseasonStartDate, state.calendar.currentDate) + 1);
     }
     recoverSquads(state);
+    processTransferPreAgreements(state);
     processScoutingAssignments(state);
     maybeGenerateAiOffer(state);
     refreshTransferMarket(state);
@@ -2409,6 +2464,7 @@
     state.league.schedule = generateSchedule(state.league.clubs, state.season, state.calendar.seasonStartDate);
     state.transfers.offers = state.transfers.offers.filter((offer) => offer.status === "pending" || offer.status === "countered").slice(0, 12);
     refreshTransferMarket(state);
+    processTransferPreAgreements(state);
     addInbox(state, "Season Complete", `${finalTable[0].clubName} won Season ${completedSeason}. New budgets have been set.`);
 
     return {
@@ -2646,6 +2702,7 @@
     state.transfers.marketIds = state.transfers.marketIds || [];
     state.transfers.offers = state.transfers.offers || [];
     state.transfers.shortlist = state.transfers.shortlist || [];
+    state.transfers.preAgreements = state.transfers.preAgreements || [];
     state.transfers.history = state.transfers.history || [];
     state.transfers.freeAgentIds = state.transfers.freeAgentIds || [];
     return state.transfers;
@@ -2827,6 +2884,96 @@
     if (!pros.length) pros.push("Useful market option");
     if (!cons.length) cons.push("No major red flags");
     return { player, recruitment, scout, pros, cons, shortlisted: isShortlisted(state, player.id) };
+  }
+
+  function queuePreAgreement(state, agreement) {
+    const transfers = ensureTransferState(state);
+    const player = getPlayer(state, agreement.playerId);
+    if (!player) return { ok: false, message: "Player not found." };
+    const window = transferWindowStatus(state);
+    const nextWindow = window.isOpen ? window.window : window.nextWindow;
+    const existing = transfers.preAgreements.find((item) => item.status === "pending" && item.playerId === agreement.playerId && item.toClubId === agreement.toClubId);
+    const record = existing || {
+      id: `pa${state.nextOfferId++}`,
+      status: "pending",
+      agreedSeason: state.season,
+      agreedRound: state.league.currentRound + 1,
+      agreedDate: state.calendar ? state.calendar.currentDate : null
+    };
+    Object.assign(record, {
+      ...agreement,
+      executeDate: nextWindow.opensOn,
+      windowName: nextWindow.name
+    });
+    if (!existing) transfers.preAgreements.unshift(record);
+    transfers.preAgreements = transfers.preAgreements.slice(0, 60);
+    if (agreement.offerId) {
+      const offer = transfers.offers.find((item) => item.id === agreement.offerId);
+      if (offer) offer.status = "pre-agreed";
+    }
+    addInbox(state, "Deal Pre-Agreed", `${player.name} is scheduled to move when the ${nextWindow.name.toLowerCase()} opens on ${formatGameDate(nextWindow.opensOn)}.`);
+    return {
+      ok: true,
+      preAgreement: true,
+      agreementId: record.id,
+      message: `${player.name} pre-agreed for ${formatGameDate(nextWindow.opensOn)}.`
+    };
+  }
+
+  function failPreAgreement(state, agreement, reason) {
+    agreement.status = "failed";
+    agreement.failedDate = state.calendar ? state.calendar.currentDate : null;
+    agreement.failureReason = reason;
+    const player = getPlayer(state, agreement.playerId);
+    if (agreement.toClubId === state.activeClubId || agreement.fromClubId === state.activeClubId) {
+      addInbox(state, "Pre-Agreement Failed", `${player ? player.name : "A player"} could not complete their move. ${reason}`);
+    }
+    return { ok: false, reason };
+  }
+
+  function executePreAgreement(state, agreement) {
+    const player = getPlayer(state, agreement.playerId);
+    if (!player) return failPreAgreement(state, agreement, "Player no longer exists.");
+    if (agreement.kind === "transfer") {
+      if (player.clubId !== agreement.fromClubId) return failPreAgreement(state, agreement, "The player changed clubs before the window opened.");
+      const toClub = getClub(state, agreement.toClubId);
+      if (!toClub) return failPreAgreement(state, agreement, "Buying club no longer exists.");
+      if (agreement.fee > toClub.transferBudget) return failPreAgreement(state, agreement, "Transfer budget is no longer sufficient.");
+      if (weeklyWageSpend(state, toClub.id) + agreement.wage > toClub.wageBudget) return failPreAgreement(state, agreement, "Wage budget is no longer sufficient.");
+      transferPlayer(state, player.id, agreement.fromClubId, agreement.toClubId, agreement.fee, agreement.wage);
+    } else if (agreement.kind === "free-agent") {
+      if (player.clubId) return failPreAgreement(state, agreement, "The player is no longer a free agent.");
+      const toClub = getClub(state, agreement.toClubId);
+      if (!toClub) return failPreAgreement(state, agreement, "Signing club no longer exists.");
+      if (weeklyWageSpend(state, toClub.id) + agreement.wage > toClub.wageBudget) return failPreAgreement(state, agreement, "Wage budget is no longer sufficient.");
+      completeFreeAgentSigning(state, player.id, toClub.id, agreement.wage);
+    } else if (agreement.kind === "loan") {
+      if (player.clubId !== agreement.fromClubId) return failPreAgreement(state, agreement, "The player changed clubs before the window opened.");
+      const toClub = getClub(state, agreement.toClubId);
+      if (!toClub) return failPreAgreement(state, agreement, "Loan club no longer exists.");
+      if (weeklyWageSpend(state, toClub.id) + player.wage > toClub.wageBudget) return failPreAgreement(state, agreement, "Wage budget is no longer sufficient.");
+      completeLoanMove(state, player.id, agreement.fromClubId, toClub.id);
+    }
+    agreement.status = "completed";
+    agreement.completedDate = state.calendar ? state.calendar.currentDate : null;
+    if (agreement.toClubId === state.activeClubId || agreement.fromClubId === state.activeClubId) {
+      addInbox(state, "Pre-Agreement Completed", `${player.name}'s pre-agreed move has been registered.`);
+    }
+    return { ok: true };
+  }
+
+  function processTransferPreAgreements(state) {
+    const transfers = ensureTransferState(state);
+    const window = transferWindowStatus(state);
+    if (!window.isOpen) return [];
+    const currentDate = state.calendar ? state.calendar.currentDate : null;
+    const processed = [];
+    transfers.preAgreements.forEach((agreement) => {
+      if (agreement.status !== "pending") return;
+      if (agreement.executeDate && currentDate && compareDates(currentDate, agreement.executeDate) < 0) return;
+      processed.push({ agreement, result: executePreAgreement(state, agreement) });
+    });
+    return processed;
   }
 
   function setTrainingFocus(state, playerId, focus) {
@@ -3025,6 +3172,7 @@
   }
 
   function makeTransferOffer(state, playerId, fee, wage) {
+    ensureTransferState(state);
     const player = getPlayer(state, playerId);
     const activeClub = getClub(state, state.activeClubId);
     const seller = player ? getClub(state, player.clubId) : null;
@@ -3049,6 +3197,16 @@
       const counter = createOutgoingCounter(state, player, activeClub, seller, fee, wage, sellerResistance, wageRatio);
       const reason = feeRatio < sellerResistance ? "The selling club countered with a stronger fee." : wageRatio < 0.88 ? "The player countered with a better wage." : "The player needs more convincing.";
       return { ok: false, message: `${reason} A negotiation has been opened.`, negotiationId: counter.id };
+    }
+    if (!transferWindowStatus(state).isOpen) {
+      return queuePreAgreement(state, {
+        kind: "transfer",
+        playerId: player.id,
+        fromClubId: seller.id,
+        toClubId: activeClub.id,
+        fee,
+        wage
+      });
     }
     transferPlayer(state, player.id, seller.id, activeClub.id, fee, wage);
     addInbox(state, "Transfer Complete", `${player.name} joined ${activeClub.name} for ${formatMoney(fee)}.`);
@@ -3092,6 +3250,17 @@
     if (!player || !activeClub || !seller || activeClub.id !== offer.buyerClubId) return { ok: false, message: "Negotiation is no longer valid." };
     if (offer.counterFee > activeClub.transferBudget) return { ok: false, message: "Transfer budget is too low for the counter." };
     if (weeklyWageSpend(state, activeClub.id) + offer.counterWage > activeClub.wageBudget) return { ok: false, message: "Wage budget is too low for the counter." };
+    if (!transferWindowStatus(state).isOpen) {
+      return queuePreAgreement(state, {
+        kind: "transfer",
+        playerId: player.id,
+        fromClubId: seller.id,
+        toClubId: activeClub.id,
+        fee: offer.counterFee,
+        wage: offer.counterWage,
+        offerId: offer.id
+      });
+    }
     transferPlayer(state, player.id, seller.id, activeClub.id, offer.counterFee, offer.counterWage);
     offer.status = "accepted";
     addInbox(state, "Negotiation Complete", `${player.name} joined after you accepted the counter offer.`);
@@ -3118,11 +3287,42 @@
     if (weeklyWageSpend(state, activeClub.id) + player.wage > activeClub.wageBudget) {
       return { ok: false, message: "Wage budget is too low." };
     }
-    movePlayerBetweenClubs(state, player.id, parentClub.id, activeClub.id);
+    if (!transferWindowStatus(state).isOpen) {
+      return queuePreAgreement(state, {
+        kind: "loan",
+        playerId: player.id,
+        fromClubId: parentClub.id,
+        toClubId: activeClub.id,
+        fee: 0,
+        wage: player.wage
+      });
+    }
+    completeLoanMove(state, player.id, parentClub.id, activeClub.id);
+    return { ok: true, message: `${player.name} joined on loan.` };
+  }
+
+  function completeLoanMove(state, playerId, fromClubId, toClubId) {
+    const player = getPlayer(state, playerId);
+    const parentClub = getClub(state, fromClubId);
+    const toClub = getClub(state, toClubId);
+    if (!player || !parentClub || !toClub) return null;
+    movePlayerBetweenClubs(state, player.id, parentClub.id, toClub.id);
     player.parentClubId = parentClub.id;
     player.loanUntilSeason = state.season + 1;
-    addInbox(state, "Loan Complete", `${player.name} joined on loan until the end of the season.`);
-    return { ok: true, message: `${player.name} joined on loan.` };
+    recordTransfer(state, {
+      type: "loan",
+      playerId: player.id,
+      playerName: player.name,
+      fromClubId: parentClub.id,
+      toClubId: toClub.id,
+      fee: 0,
+      wage: player.wage
+    });
+    if (toClub.id === state.activeClubId) {
+      addInbox(state, "Loan Complete", `${player.name} joined on loan until the end of the season.`);
+    }
+    refreshTransferMarket(state);
+    return player;
   }
 
   function transferPlayer(state, playerId, fromClubId, toClubId, fee, wage) {
@@ -3176,24 +3376,45 @@
     if (weeklyWageSpend(state, activeClub.id) + requestedWage > activeClub.wageBudget) {
       return { ok: false, message: "Wage budget is too low." };
     }
-    activeClub.squad.push(player.id);
-    player.clubId = activeClub.id;
+    if (!transferWindowStatus(state).isOpen) {
+      return queuePreAgreement(state, {
+        kind: "free-agent",
+        playerId: player.id,
+        fromClubId: null,
+        toClubId: activeClub.id,
+        fee: 0,
+        wage: requestedWage
+      });
+    }
+    completeFreeAgentSigning(state, player.id, activeClub.id, requestedWage);
+    return { ok: true, message: `${player.name} signed as a free agent.` };
+  }
+
+  function completeFreeAgentSigning(state, playerId, toClubId, wage) {
+    const player = getPlayer(state, playerId);
+    const club = getClub(state, toClubId);
+    if (!player || !club || player.clubId) return null;
+    const requestedWage = wage || player.wage;
+    club.squad.push(player.id);
+    player.clubId = club.id;
     player.wage = requestedWage;
     player.contractYears = randomInt(state, 2, 4);
     state.transfers.freeAgentIds = (state.transfers.freeAgentIds || []).filter((id) => id !== player.id);
-    repairMatchdaySquad(state, activeClub.id);
+    repairMatchdaySquad(state, club.id);
     recordTransfer(state, {
       type: "free-agent",
       playerId: player.id,
       playerName: player.name,
       fromClubId: null,
-      toClubId: activeClub.id,
+      toClubId: club.id,
       fee: 0,
       wage: requestedWage
     });
-    addInbox(state, "Free Agent Signed", `${player.name} joined ${activeClub.name} as a free agent.`);
+    if (club.id === state.activeClubId) {
+      addInbox(state, "Free Agent Signed", `${player.name} joined ${club.name} as a free agent.`);
+    }
     refreshTransferMarket(state);
-    return { ok: true, message: `${player.name} signed as a free agent.` };
+    return player;
   }
 
   function renewContract(state, playerId) {
@@ -3243,6 +3464,17 @@
     if (!offer || offer.status !== "pending") return { ok: false, message: "Offer is no longer available." };
     const player = getPlayer(state, offer.playerId);
     if (!player || player.clubId !== state.activeClubId) return { ok: false, message: "Player is no longer at your club." };
+    if (!transferWindowStatus(state).isOpen) {
+      return queuePreAgreement(state, {
+        kind: "transfer",
+        playerId: player.id,
+        fromClubId: state.activeClubId,
+        toClubId: offer.fromClubId,
+        fee: offer.fee,
+        wage: offer.wage,
+        offerId: offer.id
+      });
+    }
     transferPlayer(state, player.id, state.activeClubId, offer.fromClubId, offer.fee, offer.wage);
     offer.status = "accepted";
     addInbox(state, "Player Sold", `${player.name} left for ${formatMoney(offer.fee)}.`);
@@ -3390,6 +3622,8 @@
     trainingPlanLabel,
     matchPrepLabel,
     individualPlanLabel,
+    transferWindowStatus,
+    processTransferPreAgreements,
     getNextFixture,
     getTrainingCalendar,
     trainingRecommendations,

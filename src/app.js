@@ -829,6 +829,7 @@
 
   function renderTransfers() {
     const club = activeClub();
+    const windowStatus = Engine.transferWindowStatus(state);
     const needReport = Engine.recruitmentNeedReport(state, club.id);
     const recommendations = Engine.recruitmentRecommendations(state, 8);
     const shortlist = Engine.shortlistPlayers(state);
@@ -838,10 +839,12 @@
     players = sortPlayers(players, ui.marketSort, ui.marketDir);
     const offers = state.transfers.offers.filter((offer) => offer.status === "pending" && offer.type !== "outgoing");
     const negotiations = state.transfers.offers.filter((offer) => offer.status === "countered" && offer.type === "outgoing");
+    const agreements = (state.transfers.preAgreements || []).filter((agreement) => agreement.status === "pending");
 
     return `
+      ${renderTransferWindowPanel(windowStatus, agreements)}
       ${renderRecruitmentCentre(needReport, recommendations, shortlist)}
-      <div class="grid two">
+      <div class="grid three">
         <div class="panel">
           <h2 class="panel-title">Incoming Offers</h2>
           ${offers.length ? renderIncomingOffers(offers) : `<div class="empty-state">No pending offers.</div>`}
@@ -849,6 +852,10 @@
         <div class="panel">
           <h2 class="panel-title">Negotiations</h2>
           ${negotiations.length ? renderOutgoingNegotiations(negotiations) : `<div class="empty-state">No active negotiations.</div>`}
+        </div>
+        <div class="panel">
+          <h2 class="panel-title">Pre-Agreements</h2>
+          ${agreements.length ? renderPreAgreements(agreements) : `<div class="empty-state">Deals agreed outside a window appear here.</div>`}
         </div>
       </div>
       <div class="panel" style="margin-top:14px">
@@ -859,6 +866,23 @@
       <div class="panel" style="margin-top:14px">
         <h2 class="panel-title">Transfer Ledger</h2>
         ${renderTransferHistory(state.transfers.history || [])}
+      </div>
+    `;
+  }
+
+  function renderTransferWindowPanel(windowStatus, agreements) {
+    const tone = windowStatus.isOpen ? windowStatus.isDeadlineDay ? "amber" : "green" : "blue";
+    return `
+      <div class="transfer-window-panel">
+        <div>
+          <span class="pill ${tone}">${windowStatus.isOpen ? windowStatus.label : "Window Closed"}</span>
+          <h2>${windowStatus.isOpen ? `${windowStatus.daysRemaining} day${windowStatus.daysRemaining === 1 ? "" : "s"} remaining` : `Next opens ${Engine.formatGameDate(windowStatus.opensOn)}`}</h2>
+          <p>${windowStatus.isOpen ? `Closes ${Engine.formatGameDate(windowStatus.closesOn)}. Deals can be registered immediately.` : `${windowStatus.daysRemaining} day${windowStatus.daysRemaining === 1 ? "" : "s"} until the ${windowStatus.nextWindow.name.toLowerCase()}. Accepted deals become pre-agreements.`}</p>
+        </div>
+        <div class="window-stats">
+          ${metric("Pre-Agreed", agreements.length, "Pending registrations")}
+          ${metric("Deadline", windowStatus.isDeadlineDay ? "Yes" : "No", windowStatus.isOpen ? "Window status" : "Next window")}
+        </div>
       </div>
     `;
   }
@@ -1809,6 +1833,31 @@
     `;
   }
 
+  function renderPreAgreements(agreements) {
+    return `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Player</th><th>Type</th><th>Club</th><th>Registers</th><th>Fee</th></tr></thead>
+          <tbody>
+            ${agreements.slice(0, 8).map((agreement) => {
+              const player = Engine.getPlayer(state, agreement.playerId);
+              const incoming = agreement.toClubId === state.activeClubId;
+              return `
+                <tr>
+                  <td>${player ? escapeHtml(player.name) : "Unknown"}</td>
+                  <td>${preAgreementTypeLabel(agreement.kind)}</td>
+                  <td>${escapeHtml(clubName(incoming ? agreement.fromClubId : agreement.toClubId))}</td>
+                  <td>${agreement.executeDate ? Engine.formatGameDate(agreement.executeDate) : "-"}</td>
+                  <td>${agreement.fee ? Engine.formatMoney(agreement.fee) : "-"}</td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
   function renderScoutAssignments(assignments) {
     const visible = assignments.slice(0, 8);
     if (!visible.length) return `<div class="empty-state">Assign scouts from the market to build confidence over two in-game weeks.</div>`;
@@ -1963,6 +2012,7 @@
       const player = Engine.getPlayer(state, ui.modal.playerId);
       if (!player) return "";
       const isFreeAgent = !player.clubId;
+      const windowStatus = Engine.transferWindowStatus(state);
       const suggestedFee = isFreeAgent ? 0 : ui.modal.fee || Math.round(player.value * 1.05);
       const suggestedWage = ui.modal.wage || Math.round(player.wage * 1.08);
       return `
@@ -1985,7 +2035,8 @@
                 <input id="offer-wage" type="number" min="0" step="5000" value="${suggestedWage}">
               </div>
               <div class="message">${isFreeAgent ? "No transfer fee required" : `Value ${Engine.formatMoney(player.value)}`} | Current wage ${Engine.formatMoney(player.wage)}</div>
-              <button class="btn-primary" data-action="submit-offer" data-player-id="${player.id}">${isFreeAgent ? "Submit Contract" : "Submit Offer"}</button>
+              <div class="message ${windowStatus.isOpen ? "good" : "warn"}">${windowStatus.isOpen ? `Window open: registration can complete before ${Engine.formatGameDate(windowStatus.closesOn)}.` : `Window closed: accepted deals register on ${Engine.formatGameDate(windowStatus.opensOn)}.`}</div>
+              <button class="btn-primary" data-action="submit-offer" data-player-id="${player.id}">${isFreeAgent ? "Submit Contract" : windowStatus.isOpen ? "Submit Offer" : "Pre-Agree Offer"}</button>
             </div>
           </div>
         </div>
@@ -2791,7 +2842,17 @@
     const labels = {
       transfer: "Transfer",
       "free-agent": "Free Agent",
-      released: "Released"
+      released: "Released",
+      loan: "Loan"
+    };
+    return labels[type] || type;
+  }
+
+  function preAgreementTypeLabel(type) {
+    const labels = {
+      transfer: "Transfer",
+      "free-agent": "Free Agent",
+      loan: "Loan"
     };
     return labels[type] || type;
   }

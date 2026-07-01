@@ -2346,6 +2346,39 @@ tr.highlight td {
   justify-content: flex-start;
 }
 
+.transfer-window-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
+  gap: 14px;
+  align-items: stretch;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: linear-gradient(180deg, var(--panel), var(--panel-soft));
+  box-shadow: var(--shadow-sm);
+}
+
+.transfer-window-panel h2 {
+  margin: 10px 0 4px;
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.transfer-window-panel p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.window-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .attribute-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2556,6 +2589,7 @@ tr.highlight td {
   .training-layout,
   .squad-insights,
   .recruitment-layout,
+  .transfer-window-panel,
   .setup-layout,
   .player-detail {
     grid-template-columns: 1fr;
@@ -2635,6 +2669,7 @@ tr.highlight td {
   .player-management-grid,
   .profile-card-grid,
   .need-grid,
+  .window-stats,
   .ratings-grid {
     grid-template-columns: 1fr;
   }
