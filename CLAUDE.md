@@ -188,6 +188,7 @@ Design target:
 - `402c010` Add negotiation intelligence and deadline day panel
 - `8b9be63` Add AI transfer activity and market news
 - `4137c9d` Expand AI loan market and transfer news
+- `686b64e` Improve calendar flow and player profiles
 
 The latest completed feature phase is FC26 Ratings + Player Profiles.
 
