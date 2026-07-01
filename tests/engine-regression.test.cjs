@@ -69,6 +69,8 @@ function run() {
   assert.equal(activeClub.tactics.mentality, "balanced", "New saves should include default tactics");
   assert.equal(activeClub.bench.length, 7, "New saves should include a seven-player bench");
   assert.equal(activeClub.bench.some((id) => activeClub.lineup.includes(id)), false, "Bench should not overlap the starting XI");
+  assert.equal(activeClub.trainingPlan, "balanced", "New saves should include a weekly training plan");
+  assert.equal(activeClub.matchPrep, "balanced", "New saves should include match preparation");
   const tactic = Engine.setTactic(save, activeClub.id, "pressing", "high");
   assert.equal(tactic.ok, true, "Tactic settings should be editable");
   assert.equal(activeClub.tactics.pressing, "high", "Tactic change should persist");
@@ -87,6 +89,17 @@ function run() {
   const nextLineup = Engine.autoSelectLineup(save, activeClub.id);
   assert.equal(nextLineup.includes(injuredStarter.id), false, "Auto lineup should exclude injured players");
   assert.equal(Engine.autoSelectBench(save, activeClub.id).includes(injuredStarter.id), false, "Auto bench should exclude injured players");
+  assert.equal(Engine.isUnavailable(save, injuredStarter), true, "Injured players should be unavailable");
+  const suspendedStarter = Engine.getPlayer(save, activeClub.lineup[1]);
+  suspendedStarter.suspension = {
+    type: "Red card",
+    returnDate: "2100-01-01",
+    returnSeason: save.season,
+    returnRound: save.league.currentRound + 2,
+    fixtureId: "test"
+  };
+  assert.equal(Engine.isSuspended(save, suspendedStarter), true, "Suspensions should be tracked");
+  assert.equal(Engine.autoSelectLineup(save, activeClub.id).includes(suspendedStarter.id), false, "Auto lineup should exclude suspended players");
 
   const expiringPlayer = Engine.clubPlayers(save, save.activeClubId).find((player) => player.contractYears <= 1) || Engine.clubPlayers(save, save.activeClubId)[0];
   expiringPlayer.contractYears = 1;
@@ -98,6 +111,25 @@ function run() {
   const training = Engine.setTrainingFocus(save, trainingPlayer.id, "playmaking");
   assert.equal(training.ok, true, "Training focus should be settable for own players");
   assert.equal(trainingPlayer.trainingFocus, "playmaking", "Training focus should persist on the player");
+  const individualPlan = Engine.setIndividualPlan(save, trainingPlayer.id, "extra");
+  assert.equal(individualPlan.ok, true, "Individual development plans should be settable");
+  assert.equal(trainingPlayer.individualPlan, "extra", "Individual plan should persist on the player");
+  const restResult = Engine.restPlayer(save, trainingPlayer.id);
+  assert.equal(restResult.ok, true, "Players should be assignable to rest or rehab");
+  assert.equal(trainingPlayer.individualPlan, "recovery", "Rest action should switch the player to recovery");
+  const weeklyPlan = Engine.setTrainingPlan(save, activeClub.id, "tactical");
+  assert.equal(weeklyPlan.ok, true, "Weekly training plan should be settable");
+  const matchPrep = Engine.setMatchPrep(save, activeClub.id, "defensiveShape");
+  assert.equal(matchPrep.ok, true, "Match preparation should be settable");
+  const familiarityBefore = activeClub.matchPrepFamiliarity.defensiveShape;
+  Engine.simulateNextDay(save);
+  assert.ok(activeClub.matchPrepFamiliarity.defensiveShape > familiarityBefore, "Daily progression should build match prep familiarity");
+  assert.ok(activeClub.trainingReport && activeClub.trainingReport.plan === "tactical", "Daily progression should record the training report");
+  assert.ok(Engine.getTrainingCalendar(save, activeClub.id, 7).length === 7, "Training calendar should return upcoming training days");
+  assert.ok(Engine.trainingRecommendations(save, activeClub.id).length > 0, "Staff should generate training recommendations");
+  assert.ok(Engine.playerDevelopmentReport(save, trainingPlayer.id).growthRoom >= 0, "Player development reports should include growth room");
+  assert.ok(Engine.squadAvailabilityReport(save, activeClub.id).injured >= 1, "Squad availability reports should count injuries");
+  assert.ok(Array.isArray(Engine.squadDevelopmentReport(save, activeClub.id).prospects), "Squad development reports should include prospects");
 
   const dailySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 7777 });
   const dailyClub = Engine.getClub(dailySave, dailySave.activeClubId);
@@ -114,6 +146,20 @@ function run() {
   assert.ok(matchdayResult && matchdayResult.activeMatch, "Daily progression should eventually reach the active club match");
   assert.equal(matchdayResult.date, firstFixture.date, "The active match should be played on its fixture date");
   assert.ok(Engine.daysBetween(firstDate, firstFixture.date) > 0, "The first fixture should be scheduled after preseason begins");
+
+  const recoverySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 8888 });
+  const physicalSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 8888 });
+  Engine.clubPlayers(recoverySave, recoverySave.activeClubId).forEach((player) => {
+    player.fitness = 78;
+  });
+  Engine.clubPlayers(physicalSave, physicalSave.activeClubId).forEach((player) => {
+    player.fitness = 78;
+  });
+  Engine.setTrainingPlan(recoverySave, recoverySave.activeClubId, "recovery");
+  Engine.setTrainingPlan(physicalSave, physicalSave.activeClubId, "physical");
+  Engine.simulateNextDay(recoverySave);
+  Engine.simulateNextDay(physicalSave);
+  assert.ok(averageFitness(recoverySave) > averageFitness(physicalSave), "Recovery training should protect fitness more than physical training");
 
   const transferTarget = save.transfers.marketIds.map((id) => Engine.getPlayer(save, id)).find((player) => player && player.clubId);
   Engine.getClub(save, save.activeClubId).transferBudget = 100000000;

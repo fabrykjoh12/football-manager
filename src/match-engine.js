@@ -260,7 +260,7 @@
       score: 0,
       reds: 0,
       yellows: {},
-      phases: calculatePhaseStrengths(items, formation, tactics, side === "home")
+      phases: applyMatchPrepModifiers(calculatePhaseStrengths(items, formation, tactics, side === "home"), club)
     };
   }
 
@@ -317,6 +317,36 @@
       roleFit,
       chemistry
     };
+  }
+
+  function applyMatchPrepModifiers(phases, club) {
+    const prep = club && club.matchPrep ? club.matchPrep : "balanced";
+    const familiarity = club && club.matchPrepFamiliarity ? clamp((club.matchPrepFamiliarity[prep] || 0) / 100, 0, 1) : 0;
+    const boost = 1 + familiarity;
+    const next = { ...phases };
+    if (prep === "defensiveShape") {
+      next.defensiveStability += 2.4 * boost;
+      next.chancePrevention += 2.8 * boost;
+      next.defensiveTransition += 2.2 * boost;
+      next.chemistry += 0.8 * boost;
+    } else if (prep === "attackingPatterns") {
+      next.chanceCreation += 2.8 * boost;
+      next.attackStrength += 2.2 * boost;
+      next.centralThreat += 1.6 * boost;
+      next.wideThreat += 1.2 * boost;
+      next.attackingTransition += 1.8 * boost;
+    } else if (prep === "setPieces") {
+      next.setPieceThreat += 5.5 * boost;
+      next.chanceCreation += 0.8 * boost;
+    } else if (prep === "pressingTraps") {
+      next.pressingStrength += 4.4 * boost;
+      next.counterAttackThreat += 1.4 * boost;
+      next.defensiveTransition += 1.2 * boost;
+    } else {
+      next.chemistry += 0.9 * boost;
+      next.roleFit += 0.6 * boost;
+    }
+    return next;
   }
 
   function initialTeamStats() {
@@ -564,7 +594,7 @@
     team.bench = team.bench.filter((item) => item.player.id !== incomingPlayer.id);
     team.usedPlayers.push(incoming);
     team.subsUsed += 1;
-    team.phases = calculatePhaseStrengths(team.players, team.formation, team.tactics, team.side === "home");
+    team.phases = applyMatchPrepModifiers(calculatePhaseStrengths(team.players, team.formation, team.tactics, team.side === "home"), team.club);
 
     const outStats = match.stats.player[outgoing.player.id] || initialPlayerStats(outgoing.player);
     const inStats = match.stats.player[incomingPlayer.id] || initialPlayerStats(incomingPlayer);

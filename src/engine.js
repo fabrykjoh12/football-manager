@@ -14,6 +14,159 @@
     physical: ["pace", "acceleration", "stamina", "strength", "jumping"],
     mentality: ["decisions", "leadership", "workRate", "composure"]
   };
+  const TRAINING_PLANS = {
+    balanced: {
+      label: "Balanced",
+      description: "Keeps the squad ticking over with manageable load.",
+      load: 1,
+      recovery: 1,
+      sharpness: 1,
+      morale: 0.2,
+      injuryRisk: 1,
+      growthRate: 0.012,
+      familiarity: 1.8,
+      attributes: ["teamwork", "decisions", "firstTouch", "stamina"]
+    },
+    recovery: {
+      label: "Recovery",
+      description: "Prioritises freshness, morale, and reducing soft-tissue risk.",
+      load: 0.25,
+      recovery: 3.2,
+      sharpness: -0.4,
+      morale: 0.8,
+      injuryRisk: 0.48,
+      growthRate: 0.004,
+      familiarity: 0.8,
+      attributes: ["naturalFitness", "injuryResistance", "stamina"]
+    },
+    tactical: {
+      label: "Tactical",
+      description: "Builds structure, cohesion, decision-making, and role familiarity.",
+      load: 0.8,
+      recovery: 0.4,
+      sharpness: 1.8,
+      morale: 0.1,
+      injuryRisk: 0.82,
+      growthRate: 0.01,
+      familiarity: 3.8,
+      attributes: ["decisions", "positioning", "teamwork", "concentration", "passing"]
+    },
+    attacking: {
+      label: "Attacking",
+      description: "Chance creation, finishing, combinations, and final-third rhythm.",
+      load: 1.2,
+      recovery: -0.2,
+      sharpness: 2.1,
+      morale: 0.2,
+      injuryRisk: 1.08,
+      growthRate: 0.014,
+      familiarity: 2.4,
+      attributes: ["finishing", "passing", "vision", "offTheBall", "dribbling", "firstTouch"]
+    },
+    defensive: {
+      label: "Defensive",
+      description: "Shape, pressure coverage, duel work, and transition security.",
+      load: 1.05,
+      recovery: 0,
+      sharpness: 1.7,
+      morale: 0.1,
+      injuryRisk: 0.96,
+      growthRate: 0.013,
+      familiarity: 2.8,
+      attributes: ["tackling", "marking", "positioning", "concentration", "strength"]
+    },
+    physical: {
+      label: "Physical",
+      description: "Heavy conditioning block for stamina, pace, power, and intensity.",
+      load: 2.35,
+      recovery: -2.1,
+      sharpness: 0.7,
+      morale: -0.4,
+      injuryRisk: 1.58,
+      growthRate: 0.018,
+      familiarity: 0.6,
+      attributes: ["pace", "acceleration", "stamina", "strength", "jumping", "naturalFitness"]
+    }
+  };
+  const MATCH_PREP = {
+    balanced: {
+      label: "Balanced Prep",
+      description: "Light opponent prep across all phases.",
+      sharpness: 0.4,
+      familiarity: 1.2,
+      phase: "chemistry"
+    },
+    defensiveShape: {
+      label: "Defensive Shape",
+      description: "Back-line distances, compactness, and box protection.",
+      sharpness: 0.5,
+      familiarity: 2.2,
+      phase: "defense"
+    },
+    attackingPatterns: {
+      label: "Attacking Patterns",
+      description: "Automatisms for chance creation and final-third timing.",
+      sharpness: 0.8,
+      familiarity: 2.2,
+      phase: "attack"
+    },
+    setPieces: {
+      label: "Set Pieces",
+      description: "Corners, wide free kicks, blockers, and second balls.",
+      sharpness: 0.6,
+      familiarity: 2,
+      phase: "setPieces"
+    },
+    pressingTraps: {
+      label: "Pressing Traps",
+      description: "Trigger work, counter-press lanes, and forced turnovers.",
+      sharpness: 0.9,
+      familiarity: 2.3,
+      phase: "pressing"
+    }
+  };
+  const INDIVIDUAL_PLANS = {
+    normal: {
+      label: "Normal",
+      description: "Standard first-team workload.",
+      loadMultiplier: 1,
+      recovery: 0,
+      sharpness: 0,
+      morale: 0,
+      growthMultiplier: 1,
+      injuryRisk: 1
+    },
+    recovery: {
+      label: "Recovery",
+      description: "Lower load with extra freshness work.",
+      loadMultiplier: 0.35,
+      recovery: 3.2,
+      sharpness: -0.7,
+      morale: 0.6,
+      growthMultiplier: 0.45,
+      injuryRisk: 0.42
+    },
+    extra: {
+      label: "Extra Development",
+      description: "More technical reps for improving players.",
+      loadMultiplier: 1.32,
+      recovery: -0.8,
+      sharpness: 0.7,
+      morale: -0.1,
+      growthMultiplier: 1.55,
+      injuryRisk: 1.28
+    },
+    rehab: {
+      label: "Rehab",
+      description: "Medical-led work for players returning from injury.",
+      loadMultiplier: 0.18,
+      recovery: 4.4,
+      sharpness: -1.2,
+      morale: 0.3,
+      growthMultiplier: 0.2,
+      injuryRisk: 0.3
+    }
+  };
   const DEFAULT_TACTICS = {
     mentality: "balanced",
     pressing: "standard",
@@ -312,6 +465,7 @@
       sharpness: randomInt(state, 52, 86),
       form: [],
       trainingFocus: "balanced",
+      individualPlan: "normal",
       potential,
       currentAbility,
       attributes,
@@ -319,10 +473,12 @@
       careerTotals: freshPlayerStats(),
       history: [],
       development: [],
+      developmentEvents: [],
       transferListed: false,
       loanUntilSeason: null,
       parentClubId: null,
-      injury: null
+      injury: null,
+      suspension: null
     };
     player.currentAbility = calculateAbilityFromAttributes(player);
     player.value = calculatePlayerValue(player);
@@ -360,6 +516,7 @@
       sharpness: Math.round(clamp(45 + seedPlayer.starts * 1.2 + seedPlayer.minutes / 130, 45, 95)),
       form: [],
       trainingFocus: "balanced",
+      individualPlan: "normal",
       potential,
       currentAbility,
       attributes,
@@ -367,10 +524,12 @@
       careerTotals: freshPlayerStats(),
       history: [],
       development: [],
+      developmentEvents: [],
       transferListed: false,
       loanUntilSeason: null,
       parentClubId: null,
       injury: null,
+      suspension: null,
       realWorld: true,
       source: {
         provider: "Fantasy Premier League",
@@ -545,6 +704,10 @@
         bench: [],
         formation: index % 3 === 0 ? "4-2-3-1" : index % 3 === 1 ? "4-3-3" : "4-4-2",
         tactics: defaultTactics(index),
+        trainingPlan: "balanced",
+        matchPrep: "balanced",
+        matchPrepFamiliarity: defaultMatchPrepFamiliarity(),
+        trainingReport: null,
         seasonFinance: {
           prizeMoney: 0,
           transferIncome: 0,
@@ -591,13 +754,13 @@
   }
 
   function getPlayer(state, playerId) {
-    return state.players[playerId] || null;
+    return normalizePlayerState(state.players[playerId] || null);
   }
 
   function clubPlayers(state, clubId) {
     const club = getClub(state, clubId);
     if (!club) return [];
-    return club.squad.map((id) => state.players[id]).filter(Boolean);
+    return club.squad.map((id) => normalizePlayerState(state.players[id])).filter(Boolean);
   }
 
   function roundDateForIndex(startDate, roundIndex) {
@@ -663,7 +826,7 @@
     const club = getClub(state, clubId);
     if (!club) return [];
     const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
-    const players = clubPlayers(state, clubId).filter((player) => player.fitness > 18 && !isInjured(state, player));
+    const players = clubPlayers(state, clubId).filter((player) => player.fitness > 18 && !isUnavailable(state, player));
     const selected = [];
     formation.forEach((slot) => {
       const available = players.filter((player) => !selected.includes(player.id));
@@ -686,7 +849,7 @@
     const club = getClub(state, clubId);
     if (!club) return [];
     const squadIds = new Set(club.squad);
-    const valid = (club.lineup || []).filter((id) => squadIds.has(id) && state.players[id] && !isInjured(state, state.players[id]) && state.players[id].contractYears > 0);
+    const valid = (club.lineup || []).filter((id) => squadIds.has(id) && state.players[id] && !isUnavailable(state, state.players[id]));
     if (valid.length !== 11) {
       club.lineup = autoSelectLineup(state, clubId);
     } else {
@@ -700,7 +863,7 @@
     if (!club) return [];
     const lineupIds = new Set((club.lineup && club.lineup.length === 11 ? club.lineup : autoSelectLineup(state, clubId)).slice(0, 11));
     const candidates = clubPlayers(state, clubId)
-      .filter((player) => !lineupIds.has(player.id) && player.fitness > 18 && !isInjured(state, player) && player.contractYears > 0);
+      .filter((player) => !lineupIds.has(player.id) && player.fitness > 18 && !isUnavailable(state, player));
     const selected = [];
 
     function takeBest(predicate, slot) {
@@ -742,8 +905,7 @@
         squadIds.has(id) &&
         player &&
         !lineupIds.has(id) &&
-        !isInjured(state, player) &&
-        player.contractYears > 0
+        !isUnavailable(state, player)
       );
     });
     const autoBench = autoSelectBench(state, clubId);
@@ -763,7 +925,7 @@
     const club = getClub(state, clubId);
     if (!club) return { ok: false, message: "Club not found." };
     const squadIds = new Set(club.squad);
-    const unique = Array.from(new Set(playerIds)).filter((id) => squadIds.has(id) && state.players[id] && !isInjured(state, state.players[id]) && state.players[id].contractYears > 0);
+    const unique = Array.from(new Set(playerIds)).filter((id) => squadIds.has(id) && state.players[id] && !isUnavailable(state, state.players[id]));
     if (unique.length !== 11) {
       return { ok: false, message: "Select exactly 11 players." };
     }
@@ -779,7 +941,7 @@
     const lineupIds = new Set(ensureLineup(state, clubId));
     const unique = Array.from(new Set(playerIds)).filter((id) => {
       const player = state.players[id];
-      return squadIds.has(id) && player && !lineupIds.has(id) && !isInjured(state, player) && player.contractYears > 0;
+      return squadIds.has(id) && player && !lineupIds.has(id) && !isUnavailable(state, player);
     });
     club.bench = unique.slice(0, BENCH_SIZE);
     return { ok: true, message: "Bench saved." };
@@ -822,6 +984,109 @@
     return normalizeTactics(variants[index % variants.length]);
   }
 
+  function defaultMatchPrepFamiliarity() {
+    return Object.keys(MATCH_PREP).reduce((result, key) => {
+      result[key] = key === "balanced" ? 28 : 12;
+      return result;
+    }, {});
+  }
+
+  function trainingPlanLabel(plan) {
+    return TRAINING_PLANS[plan] ? TRAINING_PLANS[plan].label : TRAINING_PLANS.balanced.label;
+  }
+
+  function matchPrepLabel(prep) {
+    return MATCH_PREP[prep] ? MATCH_PREP[prep].label : MATCH_PREP.balanced.label;
+  }
+
+  function individualPlanLabel(plan) {
+    return INDIVIDUAL_PLANS[plan] ? INDIVIDUAL_PLANS[plan].label : INDIVIDUAL_PLANS.normal.label;
+  }
+
+  function normalizePlayerState(player) {
+    if (!player) return null;
+    player.trainingFocus = TRAINING_FOCUS[player.trainingFocus] ? player.trainingFocus : "balanced";
+    player.individualPlan = INDIVIDUAL_PLANS[player.individualPlan] ? player.individualPlan : "normal";
+    player.developmentEvents = Array.isArray(player.developmentEvents) ? player.developmentEvents : [];
+    player.suspension = player.suspension || null;
+    player.form = Array.isArray(player.form) ? player.form : [];
+    player.secondaryPositions = Array.isArray(player.secondaryPositions) ? player.secondaryPositions : [];
+    return player;
+  }
+
+  function normalizeTrainingSetup(club) {
+    if (!club) return null;
+    club.trainingPlan = TRAINING_PLANS[club.trainingPlan] ? club.trainingPlan : "balanced";
+    club.matchPrep = MATCH_PREP[club.matchPrep] ? club.matchPrep : "balanced";
+    club.matchPrepFamiliarity = { ...defaultMatchPrepFamiliarity(), ...(club.matchPrepFamiliarity || {}) };
+    club.trainingReport = club.trainingReport || null;
+    return club;
+  }
+
+  function setTrainingPlan(state, clubId, plan) {
+    const club = normalizeTrainingSetup(getClub(state, clubId));
+    if (!club || !TRAINING_PLANS[plan]) return { ok: false, message: "Training plan unavailable." };
+    club.trainingPlan = plan;
+    return { ok: true, message: `Weekly training set to ${trainingPlanLabel(plan)}.` };
+  }
+
+  function setMatchPrep(state, clubId, prep) {
+    const club = normalizeTrainingSetup(getClub(state, clubId));
+    if (!club || !MATCH_PREP[prep]) return { ok: false, message: "Match preparation unavailable." };
+    club.matchPrep = prep;
+    return { ok: true, message: `Match preparation set to ${matchPrepLabel(prep)}.` };
+  }
+
+  function daysUntilNextFixture(state, clubId, fromDate) {
+    ensureCalendar(state);
+    const fixture = getNextFixture(state, clubId);
+    if (!fixture || !fixture.date) return null;
+    return Math.max(0, daysBetween(fromDate || state.calendar.currentDate, fixture.date));
+  }
+
+  function daysSinceLastFixture(state, clubId, fromDate) {
+    ensureCalendar(state);
+    const date = fromDate || state.calendar.currentDate;
+    const played = [];
+    state.league.schedule.forEach((roundData) => {
+      roundData.fixtures.forEach((fixture) => {
+        if (!fixture.played || fixture.homeClubId !== clubId && fixture.awayClubId !== clubId || !fixture.date) return;
+        if (compareDates(fixture.date, date) < 0) played.push(fixture);
+      });
+    });
+    if (!played.length) return null;
+    played.sort((a, b) => compareDates(b.date, a.date));
+    return Math.max(0, daysBetween(played[0].date, date));
+  }
+
+  function autoSetTrainingPlan(state, clubId) {
+    const club = normalizeTrainingSetup(getClub(state, clubId));
+    if (!club) return { ok: false, message: "Club not found." };
+    const squad = clubPlayers(state, clubId);
+    const avgFitness = average(squad.map((player) => player.fitness || 75));
+    const injuryCount = squad.filter((player) => isInjured(state, player)).length;
+    const daysToNext = daysUntilNextFixture(state, clubId);
+    const strength = teamStrength(state, clubId);
+    if (avgFitness < 68 || injuryCount >= 3 || daysToNext !== null && daysToNext <= 2) {
+      club.trainingPlan = "recovery";
+    } else if (daysToNext !== null && daysToNext <= 5) {
+      club.trainingPlan = strength.defense < strength.attack - 4 ? "defensive" : strength.attack < strength.defense - 4 ? "attacking" : "tactical";
+    } else if (avgFitness > 86 && daysToNext !== null && daysToNext >= 8) {
+      club.trainingPlan = "physical";
+    } else {
+      club.trainingPlan = "balanced";
+    }
+    const next = getNextFixture(state, clubId);
+    const opponentId = next ? (next.homeClubId === clubId ? next.awayClubId : next.homeClubId) : null;
+    const opponent = opponentId ? teamStrength(state, opponentId) : null;
+    if (!opponent) club.matchPrep = "balanced";
+    else if (opponent.attack > strength.defense + 5) club.matchPrep = "defensiveShape";
+    else if (strength.attack > opponent.defense + 5) club.matchPrep = "attackingPatterns";
+    else if (average(ensureLineup(state, clubId).map((id) => state.players[id]).filter(Boolean).map((player) => player.attributes.heading + player.attributes.jumping)) / 2 > 74) club.matchPrep = "setPieces";
+    else club.matchPrep = "pressingTraps";
+    return { ok: true, message: `Staff set ${trainingPlanLabel(club.trainingPlan)} with ${matchPrepLabel(club.matchPrep)}.` };
+  }
+
   function setTactic(state, clubId, key, value) {
     const club = getClub(state, clubId);
     const group = tacticGroup(key);
@@ -861,6 +1126,7 @@
   }
 
   function tacticalProfile(club) {
+    normalizeTrainingSetup(club);
     const tactics = normalizeTactics(club && club.tactics);
     const profile = {
       attack: 0,
@@ -903,6 +1169,14 @@
     if (tactics.focus === "flanks") Object.assign(profile, addProfile(profile, { attack: 0.8, corners: 2, passAccuracy: -1 }));
     if (tactics.focus === "setPieces") Object.assign(profile, addProfile(profile, { xg: 0.04, corners: 1, shotVolume: -0.2 }));
     if (tactics.focus === "counter") Object.assign(profile, addProfile(profile, { defense: 0.8, xg: 0.06, possession: -4, shotVolume: 0.5, passAccuracy: -2 }));
+
+    const prep = club && MATCH_PREP[club.matchPrep] ? club.matchPrep : "balanced";
+    const familiarity = club && club.matchPrepFamiliarity ? clamp((club.matchPrepFamiliarity[prep] || 0) / 100, 0, 1) : 0;
+    if (prep === "defensiveShape") Object.assign(profile, addProfile(profile, { defense: 0.8 + familiarity * 1.4, xgAgainst: -0.04 - familiarity * 0.09, passAccuracy: familiarity * 0.8 }));
+    if (prep === "attackingPatterns") Object.assign(profile, addProfile(profile, { attack: 0.8 + familiarity * 1.4, xg: 0.04 + familiarity * 0.09, shotVolume: familiarity * 0.4 }));
+    if (prep === "setPieces") Object.assign(profile, addProfile(profile, { xg: 0.03 + familiarity * 0.07, corners: 1 + familiarity * 2 }));
+    if (prep === "pressingTraps") Object.assign(profile, addProfile(profile, { midfield: familiarity * 1.1, pressure: 0.7 + familiarity * 1.4, fouls: familiarity * 1.2, fatigue: familiarity * 0.4 }));
+    if (prep === "balanced") Object.assign(profile, addProfile(profile, { rating: familiarity * 0.4, passAccuracy: familiarity * 0.5 }));
 
     profile.intensity = Math.round(clamp(profile.intensity, 20, 92));
     profile.injuryRisk = clamp(profile.injuryRisk, 0.72, 1.35);
@@ -979,6 +1253,19 @@
     return player.injury.returnSeason === state.season && player.injury.returnRound > state.league.currentRound;
   }
 
+  function isSuspended(state, player) {
+    if (!player || !player.suspension) return false;
+    if (player.suspension.returnDate && state.calendar && state.calendar.currentDate) {
+      return compareDates(player.suspension.returnDate, state.calendar.currentDate) > 0;
+    }
+    if (player.suspension.returnSeason > state.season) return true;
+    return player.suspension.returnSeason === state.season && player.suspension.returnRound > state.league.currentRound;
+  }
+
+  function isUnavailable(state, player) {
+    return !player || player.contractYears <= 0 || isInjured(state, player) || isSuspended(state, player);
+  }
+
   function injuryWeeksRemaining(state, player) {
     if (!player || !player.injury) return 0;
     if (player.injury.returnDate && state.calendar && state.calendar.currentDate) {
@@ -990,12 +1277,63 @@
     return Math.max(1, player.injury.returnRound - state.league.currentRound);
   }
 
+  function suspensionDaysRemaining(state, player) {
+    if (!player || !player.suspension) return 0;
+    if (player.suspension.returnDate && state.calendar && state.calendar.currentDate) {
+      return Math.max(1, daysBetween(state.calendar.currentDate, player.suspension.returnDate));
+    }
+    return Math.max(1, ((player.suspension.returnRound || state.league.currentRound + 1) - state.league.currentRound) * 7);
+  }
+
+  function injuryRiskLevel(state, player) {
+    if (!player) return { key: "unknown", label: "-", tone: "amber", score: 0, detail: "No player selected" };
+    if (isInjured(state, player)) {
+      return { key: "injured", label: "Injured", tone: "red", score: 100, detail: availabilityLabel(state, player) };
+    }
+    const club = getClub(state, player.clubId);
+    const plan = club ? TRAINING_PLANS[club.trainingPlan] || TRAINING_PLANS.balanced : TRAINING_PLANS.balanced;
+    const individual = INDIVIDUAL_PLANS[player.individualPlan] || INDIVIDUAL_PLANS.normal;
+    const resistance = averageExisting(player.attributes || {}, ["injuryResistance", "naturalFitness", "stamina"], 60);
+    const fitnessRisk = player.fitness < 58 ? 36 : player.fitness < 72 ? 22 : player.fitness < 84 ? 10 : 3;
+    const ageRisk = player.age >= 32 ? 14 : player.age <= 21 ? 6 : 0;
+    const historyRisk = Math.min(12, (player.careerTotals && player.careerTotals.injuries || 0) * 3);
+    const workloadRisk = (plan.load || 1) * 8 * (individual.loadMultiplier || 1);
+    const score = round(clamp(fitnessRisk + ageRisk + historyRisk + workloadRisk + (62 - resistance) * 0.45, 0, 100), 0);
+    if (score >= 58) return { key: "high", label: "High", tone: "red", score, detail: "Reduce load or rest" };
+    if (score >= 34) return { key: "medium", label: "Medium", tone: "amber", score, detail: "Monitor workload" };
+    return { key: "low", label: "Low", tone: "green", score, detail: "Managed load" };
+  }
+
+  function playerAvailabilityStatus(state, player) {
+    normalizePlayerState(player);
+    if (!player) return { key: "unknown", label: "-", tone: "amber", detail: "No player selected" };
+    if (isInjured(state, player)) {
+      const weeks = injuryWeeksRemaining(state, player);
+      return {
+        key: "injured",
+        label: `${player.injury.type} (${weeks}w)`,
+        tone: "red",
+        detail: player.injury.returnDate ? `Back ${formatGameDate(player.injury.returnDate)}` : "Medical room"
+      };
+    }
+    if (isSuspended(state, player)) {
+      const days = suspensionDaysRemaining(state, player);
+      return {
+        key: "suspended",
+        label: "Suspended",
+        tone: "red",
+        detail: `${days} day${days === 1 ? "" : "s"} remaining`
+      };
+    }
+    if (player.contractYears <= 0) return { key: "contract", label: "Out of contract", tone: "red", detail: "Cannot be selected" };
+    if (player.fitness < 55) return { key: "unfit", label: "Low fitness", tone: "amber", detail: `${player.fitness}% fitness` };
+    if (injuryRiskLevel(state, player).key === "high") return { key: "doubtful", label: "Doubtful", tone: "amber", detail: "High injury risk" };
+    if (player.contractYears === 1) return { key: "expiring", label: "Expiring", tone: "amber", detail: "Contract ends soon" };
+    return { key: "available", label: "Available", tone: "green", detail: `${player.fitness}% fitness` };
+  }
+
   function availabilityLabel(state, player) {
-    if (isInjured(state, player)) return `${player.injury.type} (${injuryWeeksRemaining(state, player)}w)`;
-    if (player.contractYears <= 0) return "Out of contract";
-    if (player.contractYears === 1) return "Expiring";
-    if (player.fitness < 55) return "Low fitness";
-    return "Available";
+    return playerAvailabilityStatus(state, player).label;
   }
 
   function sampleGoals(state, xg) {
@@ -1312,6 +1650,7 @@
         addPlayerStat(player.careerTotals, "interceptions", matchStats.interceptions);
         addPlayerStat(player.seasonStats, "mistakes", matchStats.mistakes);
         addPlayerStat(player.careerTotals, "mistakes", matchStats.mistakes);
+        applyDisciplinarySuspension(state, player, matchStats, fixture);
       }
       player.form.push(rating.rating);
       player.form = player.form.slice(-5);
@@ -1406,6 +1745,38 @@
       returnSeason += 1;
     }
     return { season: returnSeason, round: returnRound, date: returnDate };
+  }
+
+  function suspensionReturnPoint(state, clubId, fromDate) {
+    ensureCalendar(state);
+    const date = fromDate || state.calendar.currentDate;
+    const fixture = state.league.schedule
+      .flatMap((roundData) => roundData.fixtures.map((fixture) => ({ ...fixture, roundNumber: roundData.number, roundDate: roundData.date })))
+      .filter((fixture) => !fixture.played && fixture.date && compareDates(fixture.date, date) > 0 && (fixture.homeClubId === clubId || fixture.awayClubId === clubId))
+      .sort((a, b) => compareDates(a.date, b.date))[0];
+    const returnDate = fixture ? addDays(fixture.date, 1) : addDays(date, 14);
+    const returnRound = fixture ? Math.max(0, (fixture.roundNumber || state.league.currentRound + 1) - 1) : state.league.currentRound + 2;
+    return { season: state.season, round: returnRound, date: returnDate };
+  }
+
+  function applyDisciplinarySuspension(state, player, matchStats, fixture) {
+    if (!player || !matchStats) return;
+    let type = null;
+    if ((matchStats.redCards || 0) > 0) type = "Red card";
+    else if ((matchStats.yellowCards || 0) > 0 && player.seasonStats.yellows > 0 && player.seasonStats.yellows % 5 === 0) type = "Yellow accumulation";
+    if (!type) return;
+    const returnPoint = suspensionReturnPoint(state, player.clubId, fixture.date || (state.calendar && state.calendar.currentDate));
+    player.suspension = {
+      type,
+      matches: 1,
+      returnSeason: returnPoint.season,
+      returnRound: returnPoint.round,
+      returnDate: returnPoint.date,
+      fixtureId: fixture.id
+    };
+    if (player.clubId === state.activeClubId) {
+      addInbox(state, "Suspension", `${player.name} is suspended for the next match after ${type.toLowerCase()}.`);
+    }
   }
 
   function pushForm(club, result) {
@@ -1515,31 +1886,279 @@
 
   function processInjuryReturns(state) {
     Object.values(state.players).forEach((player) => {
-      if (!player.injury || isInjured(state, player)) return;
-      const injuryType = player.injury.type || "injury";
-      player.injury = null;
-      player.fitness = Math.round(clamp(Math.max(player.fitness, 58) + randomInt(state, 0, 8), 0, 100));
-      player.sharpness = Math.round(clamp(player.sharpness - randomInt(state, 2, 7), 0, 100));
-      if (player.clubId === state.activeClubId) {
-        addInbox(state, "Player Returned", `${player.name} has returned from ${injuryType}.`);
+      normalizePlayerState(player);
+      if (player.injury && !isInjured(state, player)) {
+        const injuryType = player.injury.type || "injury";
+        player.injury = null;
+        player.individualPlan = player.individualPlan === "rehab" ? "recovery" : player.individualPlan;
+        player.fitness = Math.round(clamp(Math.max(player.fitness, 58) + randomInt(state, 0, 8), 0, 100));
+        player.sharpness = Math.round(clamp(player.sharpness - randomInt(state, 2, 7), 0, 100));
+        if (player.clubId === state.activeClubId) {
+          addInbox(state, "Player Returned", `${player.name} has returned from ${injuryType}.`);
+        }
+      }
+      if (player.suspension && !isSuspended(state, player)) {
+        const suspensionType = player.suspension.type || "suspension";
+        player.suspension = null;
+        if (player.clubId === state.activeClubId) {
+          addInbox(state, "Suspension Served", `${player.name} is available after ${suspensionType.toLowerCase()}.`);
+        }
       }
     });
   }
 
+  function trainingSessionForClub(state, clubId, date) {
+    ensureCalendar(state);
+    const club = normalizeTrainingSetup(getClub(state, clubId));
+    const currentDate = date || state.calendar.currentDate;
+    const plan = TRAINING_PLANS[club && club.trainingPlan] || TRAINING_PLANS.balanced;
+    const prep = MATCH_PREP[club && club.matchPrep] || MATCH_PREP.balanced;
+    const daysToNext = daysUntilNextFixture(state, clubId, currentDate);
+    const daysSinceLast = daysSinceLastFixture(state, clubId, currentDate);
+    const day = parseDate(currentDate).getUTCDay();
+    let type = plan.label;
+    let loadMultiplier = 1;
+    let recoveryBonus = 0;
+    let sharpnessBonus = 0;
+    let injuryMultiplier = 1;
+
+    if (daysToNext === 0) {
+      type = "Matchday Activation";
+      loadMultiplier = 0.12;
+      recoveryBonus = 0.2;
+      sharpnessBonus = 1.1;
+      injuryMultiplier = 0.24;
+    } else if (daysSinceLast === 1) {
+      type = "Post-Match Recovery";
+      loadMultiplier = 0.18;
+      recoveryBonus = 2.6;
+      sharpnessBonus = -0.3;
+      injuryMultiplier = 0.36;
+    } else if (daysToNext === 1) {
+      type = "Pre-Match Taper";
+      loadMultiplier = 0.35;
+      recoveryBonus = 1.1;
+      sharpnessBonus = 1.2;
+      injuryMultiplier = 0.42;
+    } else if (day === 0 && daysToNext !== 2) {
+      type = "Rest Day";
+      loadMultiplier = 0;
+      recoveryBonus = 3.4;
+      sharpnessBonus = -0.8;
+      injuryMultiplier = 0.08;
+    }
+
+    const load = plan.load * loadMultiplier;
+    return {
+      date: currentDate,
+      type,
+      planKey: club ? club.trainingPlan : "balanced",
+      planLabel: plan.label,
+      prepKey: club ? club.matchPrep : "balanced",
+      prepLabel: prep.label,
+      load,
+      recovery: plan.recovery + recoveryBonus,
+      sharpness: plan.sharpness + prep.sharpness + sharpnessBonus,
+      morale: plan.morale,
+      injuryRisk: plan.injuryRisk * injuryMultiplier,
+      growthRate: plan.growthRate * loadMultiplier,
+      familiarity: plan.familiarity * loadMultiplier + prep.familiarity * (daysToNext !== null && daysToNext <= 6 ? 1.35 : 0.75),
+      attributes: plan.attributes,
+      daysToNext,
+      daysSinceLast
+    };
+  }
+
   function recoverSquadsDaily(state) {
-    Object.values(state.players).forEach((player) => {
-      if (isInjured(state, player)) {
-        player.fitness = Math.round(clamp(player.fitness + randomInt(state, 0, 1), 0, 80));
-        player.sharpness = Math.round(clamp(player.sharpness - randomInt(state, 0, 2), 0, 100));
-        return;
-      }
-      const natural = averageExisting(player.attributes || {}, ["naturalFitness", "stamina", "injuryResistance"], 60);
-      const recovery = player.fitness < 62 ? randomInt(state, 2, 5) : randomInt(state, 1, 3);
-      const recoveryLift = natural >= 76 ? 1 : natural < 55 ? -1 : 0;
-      player.fitness = Math.round(clamp(player.fitness + recovery + recoveryLift, 0, 100));
-      const sharpnessChange = player.fitness >= 72 ? randomInt(state, 0, 2) : randomInt(state, -1, 1);
-      player.sharpness = Math.round(clamp(player.sharpness + sharpnessChange, 0, 100));
+    const reports = {};
+    state.league.clubs.forEach((club) => {
+      normalizeTrainingSetup(club);
+      const session = trainingSessionForClub(state, club.id);
+      const report = {
+        date: session.date,
+        type: session.type,
+        plan: session.planKey,
+        planLabel: session.planLabel,
+        matchPrep: session.prepKey,
+        matchPrepLabel: session.prepLabel,
+        load: round(session.load, 2),
+        injuries: 0,
+        development: 0,
+        growth: [],
+        averageFitness: 0,
+        averageSharpness: 0
+      };
+      clubPlayers(state, club.id).forEach((player) => applyTrainingToPlayer(state, club, player, session, report));
+      const squad = clubPlayers(state, club.id);
+      report.averageFitness = round(average(squad.map((player) => player.fitness)), 1);
+      report.averageSharpness = round(average(squad.map((player) => player.sharpness)), 1);
+      club.trainingReport = report;
+      reports[club.id] = report;
     });
+    return reports;
+  }
+
+  function applyTrainingToPlayer(state, club, player, session, report) {
+    normalizePlayerState(player);
+    const individual = INDIVIDUAL_PLANS[player.individualPlan] || INDIVIDUAL_PLANS.normal;
+    if (isInjured(state, player)) {
+      const rehabBoost = player.individualPlan === "rehab" ? individual.recovery : 0;
+      player.fitness = Math.round(clamp(player.fitness + randomInt(state, 0, 1) + rehabBoost, 0, 84));
+      player.sharpness = Math.round(clamp(player.sharpness - randomInt(state, 0, 2) + individual.sharpness, 0, 100));
+      return;
+    }
+    const natural = averageExisting(player.attributes || {}, ["naturalFitness", "stamina", "injuryResistance"], 60);
+    const baseRecovery = player.fitness < 62 ? randomFloat(state, 2.2, 5.2) : randomFloat(state, 0.8, 2.8);
+    const naturalLift = natural >= 76 ? 0.8 : natural < 55 ? -0.7 : 0;
+    const load = session.load * individual.loadMultiplier;
+    const loadCost = load * (player.age > 31 ? 1.18 : player.age < 23 ? 0.92 : 1);
+    const fitnessDelta = baseRecovery + naturalLift + session.recovery + individual.recovery - loadCost;
+    const sharpnessDelta = session.sharpness + individual.sharpness + (load > 0 ? randomFloat(state, -0.4, 0.8) : 0);
+    player.fitness = Math.round(clamp(player.fitness + fitnessDelta, 0, 100));
+    player.sharpness = Math.round(clamp(player.sharpness + sharpnessDelta, 0, 100));
+    player.morale = Math.round(clamp(player.morale + session.morale + individual.morale + (session.type === "Rest Day" ? 0.5 : 0), 0, 100));
+    const individualSession = {
+      ...session,
+      load,
+      growthRate: session.growthRate * individual.growthMultiplier,
+      injuryRisk: session.injuryRisk * individual.injuryRisk
+    };
+    maybeApplyTrainingGrowth(state, player, individualSession, report);
+    maybeApplyTrainingInjury(state, club, player, individualSession, report);
+  }
+
+  function maybeApplyTrainingGrowth(state, player, session, report) {
+    if (!session.growthRate || !session.attributes || !session.attributes.length) return;
+    const ageFactor = player.age <= 21 ? 1.75 : player.age <= 25 ? 1.25 : player.age <= 29 ? 0.8 : 0.35;
+    const ceiling = Math.max(player.currentAbility, player.potential || player.currentAbility);
+    if (random(state) > session.growthRate * ageFactor * clamp((ceiling - player.currentAbility + 8) / 20, 0.2, 1.4)) return;
+    const focusPool = TRAINING_FOCUS[player.trainingFocus] && TRAINING_FOCUS[player.trainingFocus].length ? TRAINING_FOCUS[player.trainingFocus] : [];
+    const pool = session.attributes.concat(focusPool);
+    const key = pick(state, pool);
+    if (!player.attributes[key]) return;
+    const before = player.attributes[key];
+    const beforeAbility = player.currentAbility;
+    player.attributes[key] = Math.round(clamp(player.attributes[key] + 1, 18, 99));
+    player.currentAbility = calculateAbilityFromAttributes(player);
+    player.value = calculatePlayerValue(player);
+    const event = {
+      date: session.date,
+      attribute: key,
+      before,
+      after: player.attributes[key],
+      abilityBefore: beforeAbility,
+      abilityAfter: player.currentAbility,
+      plan: session.planKey,
+      focus: player.trainingFocus
+    };
+    player.developmentEvents.push(event);
+    player.developmentEvents = player.developmentEvents.slice(-12);
+    if (report) {
+      report.development += 1;
+      report.growth.push({
+        playerId: player.id,
+        playerName: player.name,
+        attribute: key,
+        before,
+        after: player.attributes[key]
+      });
+      report.growth = report.growth.slice(-6);
+    }
+  }
+
+  function maybeApplyTrainingInjury(state, club, player, session, report) {
+    if (!session.injuryRisk || session.type === "Rest Day") return;
+    const resistance = averageExisting(player.attributes || {}, ["injuryResistance", "naturalFitness", "stamina"], 60);
+    const fatigue = player.fitness < 58 ? 1.9 : player.fitness < 72 ? 1.25 : 0.82;
+    const ageRisk = player.age > 31 ? 1.3 : 1;
+    const risk = 0.00085 * session.injuryRisk * Math.max(0.25, session.load) * fatigue * ageRisk * clamp(1.2 - resistance / 135, 0.52, 1.12);
+    if (random(state) > risk) return;
+    const duration = randomInt(state, 1, session.load > 1.8 ? 4 : 2);
+    const returnPoint = injuryReturnPoint(state, duration);
+    const types = session.load > 1.7 ? ["Training strain", "Hamstring tightness", "Calf strain"] : ["Training knock", "Minor tightness"];
+    player.injury = {
+      type: pick(state, types),
+      returnSeason: returnPoint.season,
+      returnRound: returnPoint.round,
+      returnDate: returnPoint.date,
+      fixtureId: `training-${session.date}`
+    };
+    player.fitness = Math.round(clamp(player.fitness - randomInt(state, 8, 18), 10, 76));
+    player.seasonStats.injuries += 1;
+    player.careerTotals.injuries += 1;
+    report.injuries += 1;
+    if (club.id === state.activeClubId) {
+      addInbox(state, "Training Injury", `${player.name} picked up ${player.injury.type} in ${session.planLabel.toLowerCase()} training.`);
+    }
+  }
+
+  function updateMatchPrepFamiliarity(state) {
+    state.league.clubs.forEach((club) => {
+      normalizeTrainingSetup(club);
+      const session = trainingSessionForClub(state, club.id);
+      Object.keys(MATCH_PREP).forEach((key) => {
+        const decay = key === club.matchPrep ? 0 : 0.28;
+        club.matchPrepFamiliarity[key] = round(clamp((club.matchPrepFamiliarity[key] || 0) - decay, 0, 100), 1);
+      });
+      club.matchPrepFamiliarity[club.matchPrep] = round(clamp((club.matchPrepFamiliarity[club.matchPrep] || 0) + session.familiarity, 0, 100), 1);
+    });
+  }
+
+  function fixtureForClubOnDate(state, clubId, date) {
+    for (const roundData of state.league.schedule || []) {
+      const fixture = (roundData.fixtures || []).find((item) => !item.played && item.date === date && (item.homeClubId === clubId || item.awayClubId === clubId));
+      if (fixture) return fixture;
+    }
+    return null;
+  }
+
+  function getTrainingCalendar(state, clubId, days) {
+    ensureCalendar(state);
+    const count = days || 10;
+    const club = normalizeTrainingSetup(getClub(state, clubId));
+    if (!club) return [];
+    return Array.from({ length: count }, (_, index) => {
+      const date = addDays(state.calendar.currentDate, index);
+      const fixture = fixtureForClubOnDate(state, clubId, date);
+      const session = trainingSessionForClub(state, clubId, date);
+      return {
+        date,
+        label: formatGameDate(date),
+        type: fixture ? "Matchday" : session.type,
+        plan: session.planKey,
+        planLabel: session.planLabel,
+        matchPrep: session.prepKey,
+        matchPrepLabel: session.prepLabel,
+        load: round(session.load, 2),
+        fixtureId: fixture ? fixture.id : null,
+        opponentId: fixture ? (fixture.homeClubId === clubId ? fixture.awayClubId : fixture.homeClubId) : null,
+        venue: fixture ? (fixture.homeClubId === clubId ? "Home" : "Away") : null
+      };
+    });
+  }
+
+  function trainingRecommendations(state, clubId) {
+    ensureCalendar(state);
+    const club = normalizeTrainingSetup(getClub(state, clubId));
+    if (!club) return [];
+    const squad = clubPlayers(state, clubId);
+    const avgFitness = round(average(squad.map((player) => player.fitness || 75)), 1);
+    const avgSharpness = round(average(squad.map((player) => player.sharpness || 55)), 1);
+    const injured = squad.filter((player) => isInjured(state, player));
+    const tired = squad.filter((player) => !isInjured(state, player) && player.fitness < 68);
+    const daysToNext = daysUntilNextFixture(state, clubId);
+    const report = club.trainingReport;
+    const recs = [];
+    if (daysToNext === 0) recs.push({ tone: "green", title: "Matchday", body: `${matchPrepLabel(club.matchPrep)} is locked in for today's fixture.` });
+    if (daysToNext !== null && daysToNext <= 2 && club.trainingPlan !== "recovery") recs.push({ tone: "amber", title: "Taper Load", body: "Recovery training is advised inside 48 hours of a match." });
+    if (avgFitness < 70) recs.push({ tone: "amber", title: "Squad Fatigue", body: `Average fitness is ${avgFitness}%. Reduce load to protect availability.` });
+    if (avgSharpness < 52 && avgFitness > 78) recs.push({ tone: "blue", title: "Sharpness", body: "The squad is fresh enough for tactical or attacking work." });
+    if (injured.length >= 3) recs.push({ tone: "red", title: "Injury List", body: `${injured.length} players are unavailable. Avoid physical blocks.` });
+    if (tired.length >= 5) recs.push({ tone: "amber", title: "Recovery Group", body: `${tired.length} players are under 68% fitness.` });
+    if (club.trainingPlan === "physical" && daysToNext !== null && daysToNext <= 5) recs.push({ tone: "red", title: "Heavy Load", body: "Physical training this close to a match increases injury risk." });
+    if (report && report.injuries > 0) recs.push({ tone: "red", title: "Training Injury", body: `${report.injuries} training injury${report.injuries === 1 ? "" : "ies"} reported yesterday.` });
+    if (!recs.length) recs.push({ tone: "green", title: "Staff View", body: "Current load is appropriate for the upcoming fixture rhythm." });
+    return recs.slice(0, 6);
   }
 
   function processScoutingAssignmentsDaily(state) {
@@ -1613,6 +2232,7 @@
     const processedDate = calendar.currentDate;
     processInjuryReturns(state);
     recoverSquadsDaily(state);
+    updateMatchPrepFamiliarity(state);
     processScoutingAssignmentsDaily(state);
     const offer = maybeGenerateDailyAiOffer(state);
     const matchday = simulateFixturesForDate(state, processedDate);
@@ -1879,6 +2499,7 @@
 
   function developPlayers(state) {
     Object.values(state.players).forEach((player) => {
+      normalizePlayerState(player);
       player.age += 1;
       player.contractYears -= 1;
       const growthWindow = player.age <= 23 ? randomFloat(state, 0.8, 3.4) : player.age <= 27 ? randomFloat(state, 0.1, 1.5) : player.age <= 31 ? randomFloat(state, -0.3, 0.7) : randomFloat(state, -2.2, -0.3);
@@ -1904,6 +2525,120 @@
       player.development.push(snapshotDevelopment(player, state.season + 1));
     });
     refillThinSquads(state);
+  }
+
+  function setIndividualPlan(state, playerId, plan) {
+    const player = getPlayer(state, playerId);
+    if (!player || !INDIVIDUAL_PLANS[plan]) return { ok: false, message: "Individual plan unavailable." };
+    if (player.clubId !== state.activeClubId) return { ok: false, message: "You can only manage your own players." };
+    player.individualPlan = plan;
+    return { ok: true, message: `${player.name} moved to ${individualPlanLabel(plan)}.` };
+  }
+
+  function restPlayer(state, playerId) {
+    const player = getPlayer(state, playerId);
+    if (!player) return { ok: false, message: "Player not found." };
+    if (player.clubId !== state.activeClubId) return { ok: false, message: "You can only manage your own players." };
+    player.individualPlan = isInjured(state, player) ? "rehab" : "recovery";
+    if (!isInjured(state, player) && !isSuspended(state, player)) {
+      player.fitness = Math.round(clamp(player.fitness + 5, 0, 100));
+      player.sharpness = Math.round(clamp(player.sharpness - 1, 0, 100));
+      player.morale = Math.round(clamp(player.morale + 1, 0, 100));
+    }
+    return { ok: true, message: `${player.name} assigned to ${individualPlanLabel(player.individualPlan)}.` };
+  }
+
+  function developmentDelta(player) {
+    normalizePlayerState(player);
+    const latest = player.development && player.development.length ? player.development[player.development.length - 1] : null;
+    return latest ? player.currentAbility - latest.currentAbility : 0;
+  }
+
+  function topAttributes(player, limit) {
+    normalizePlayerState(player);
+    return Object.keys(player.attributes || {})
+      .map((key) => ({ key, label: Data.ATTRIBUTE_LABELS[key] || key, value: player.attributes[key] }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, limit || 5);
+  }
+
+  function roleFitReport(player) {
+    normalizePlayerState(player);
+    return Data.POSITIONS.map((position) => ({
+      position,
+      score: round(playerPositionScore(player, position) - slotPenalty(player, position), 1),
+      natural: player.position === position || (player.secondaryPositions || []).includes(position)
+    }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 4);
+  }
+
+  function playerDevelopmentReport(state, playerId) {
+    const player = getPlayer(state, playerId);
+    if (!player) return null;
+    const growthRoom = Math.max(0, (player.potential || player.currentAbility) - player.currentAbility);
+    const delta = developmentDelta(player);
+    const recentRating = player.form && player.form.length ? round(average(player.form), 2) : null;
+    const progress = player.potential ? round(clamp(player.currentAbility / player.potential * 100, 0, 100), 1) : 100;
+    const stage = player.age <= 21 ? "Emerging" : player.age <= 25 ? "Developing" : player.age <= 29 ? "Prime" : player.age <= 32 ? "Experienced" : "Declining";
+    const events = (player.developmentEvents || []).slice(-5).reverse();
+    return {
+      playerId: player.id,
+      availability: playerAvailabilityStatus(state, player),
+      risk: injuryRiskLevel(state, player),
+      individualPlan: player.individualPlan,
+      growthRoom,
+      progress,
+      stage,
+      delta,
+      recentRating,
+      topAttributes: topAttributes(player, 5),
+      roleFits: roleFitReport(player),
+      events
+    };
+  }
+
+  function squadAvailabilityReport(state, clubId) {
+    const squad = clubPlayers(state, clubId);
+    const statuses = squad.map((player) => ({ player, status: playerAvailabilityStatus(state, player), risk: injuryRiskLevel(state, player) }));
+    const count = (predicate) => statuses.filter(predicate).length;
+    return {
+      total: squad.length,
+      available: count((item) => !isUnavailable(state, item.player) && item.player.fitness >= 55),
+      injured: count((item) => item.status.key === "injured"),
+      suspended: count((item) => item.status.key === "suspended"),
+      lowFitness: count((item) => item.status.key === "unfit"),
+      doubtful: count((item) => item.status.key === "doubtful"),
+      highRisk: count((item) => item.risk.key === "high"),
+      list: statuses
+        .filter((item) => item.status.key !== "available" || item.risk.key === "high")
+        .sort((a, b) => (b.risk.score || 0) - (a.risk.score || 0))
+        .slice(0, 8)
+    };
+  }
+
+  function squadDevelopmentReport(state, clubId) {
+    const squad = clubPlayers(state, clubId);
+    const rows = squad.map((player) => ({
+      player,
+      delta: developmentDelta(player),
+      growthRoom: Math.max(0, (player.potential || player.currentAbility) - player.currentAbility),
+      recentEvents: (player.developmentEvents || []).length
+    }));
+    return {
+      prospects: rows
+        .filter((row) => row.player.age <= 23 && row.growthRoom >= 5)
+        .sort((a, b) => b.growthRoom - a.growthRoom || b.player.potential - a.player.potential)
+        .slice(0, 5),
+      risers: rows
+        .filter((row) => row.delta > 0 || row.recentEvents > 0)
+        .sort((a, b) => b.delta - a.delta || b.recentEvents - a.recentEvents)
+        .slice(0, 5),
+      concerns: rows
+        .filter((row) => row.player.age >= 31 || row.delta < 0)
+        .sort((a, b) => a.delta - b.delta || b.player.age - a.player.age)
+        .slice(0, 5)
+    };
   }
 
   function setTrainingFocus(state, playerId, focus) {
@@ -2408,6 +3143,7 @@
     (state.league.clubs || []).forEach((club, index) => {
       club.formation = Data.FORMATIONS[club.formation] ? club.formation : index % 3 === 0 ? "4-2-3-1" : index % 3 === 1 ? "4-3-3" : "4-4-2";
       club.tactics = normalizeTactics(club.tactics);
+      normalizeTrainingSetup(club);
       club.lineup = club.lineup || [];
       club.bench = club.bench || [];
     });
@@ -2420,7 +3156,7 @@
       player.history = player.history || [];
       player.development = player.development || [snapshotDevelopment(player, state.season || 1)];
       player.injury = player.injury || null;
-      player.trainingFocus = player.trainingFocus || "balanced";
+      normalizePlayerState(player);
     });
     (state.scouting.assignments || []).forEach((assignment) => {
       assignment.daysRemaining = assignment.status === "active" ? assignment.daysRemaining === undefined ? Math.max(1, (assignment.roundsRemaining || 1) * 7) : assignment.daysRemaining : 0;
@@ -2454,10 +3190,25 @@
     weeklyWageSpend,
     availabilityLabel,
     isInjured,
+    isSuspended,
+    isUnavailable,
+    injuryRiskLevel,
+    playerAvailabilityStatus,
     TRAINING_FOCUS,
+    TRAINING_PLANS,
+    MATCH_PREP,
+    INDIVIDUAL_PLANS,
     DEFAULT_TACTICS,
     trainingFocusLabel,
+    trainingPlanLabel,
+    matchPrepLabel,
+    individualPlanLabel,
     getNextFixture,
+    getTrainingCalendar,
+    trainingRecommendations,
+    playerDevelopmentReport,
+    squadAvailabilityReport,
+    squadDevelopmentReport,
     simulateNextDay,
     simulateNextRound,
     simulateFixture,
@@ -2469,6 +3220,11 @@
     setFormation,
     setTactic,
     autoSetTactics,
+    setTrainingPlan,
+    setMatchPrep,
+    autoSetTrainingPlan,
+    setIndividualPlan,
+    restPlayer,
     tacticalProfile,
     teamStrength,
     scoutPlayer,

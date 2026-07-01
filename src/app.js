@@ -14,6 +14,7 @@
     setupMode: "existing",
     squadSearch: "",
     squadPosition: "all",
+    squadAvailability: "all",
     squadSort: "currentAbility",
     squadDir: "desc",
     marketSearch: "",
@@ -35,6 +36,7 @@
     ["squad", "Squad"],
     ["lineup", "Lineup"],
     ["tactics", "Tactics"],
+    ["training", "Training"],
     ["match", "Match Day"],
     ["league", "League"],
     ["transfers", "Transfers"],
@@ -210,6 +212,7 @@
       squad: renderSquad,
       lineup: renderLineup,
       tactics: renderTactics,
+      training: renderTraining,
       match: renderMatchDay,
       league: renderLeague,
       transfers: renderTransfers,
@@ -241,6 +244,7 @@
       squad: "Current ability, potential, contracts, morale, fitness, form.",
       lineup: "Pick exactly 11 starters or let the staff select by role fit.",
       tactics: "Shape, intensity, risk, and attacking routes for the next match.",
+      training: "Plan the week, manage load, and prepare for the next opponent.",
       match: "Continue through the calendar and review matchday reports.",
       league: "Table, goal difference, points, and recent form.",
       transfers: "Scout, shortlist, buy, loan, sell, and manage offers.",
@@ -262,6 +266,9 @@
     }
     if (screen === "tactics") {
       return `<button class="btn-primary" data-action="auto-tactics">Auto Match Plan</button>`;
+    }
+    if (screen === "training") {
+      return `<div class="screen-actions"><button class="btn-primary" data-action="auto-training">Auto Week</button><button class="btn-green" data-action="simulate-round" ${ui.commentaryPlaying ? "disabled" : ""}>Continue Day</button></div>`;
     }
     if (screen === "transfers") {
       return `<button class="btn-primary" data-action="invite-offers">Invite Offers</button>`;
@@ -338,12 +345,24 @@
   function renderSquad() {
     const club = activeClub();
     let players = Engine.clubPlayers(state, club.id);
-    players = filterPlayers(players, ui.squadSearch, ui.squadPosition);
+    players = filterPlayers(players, ui.squadSearch, ui.squadPosition, ui.squadAvailability);
     players = sortPlayers(players, ui.squadSort, ui.squadDir);
     const selected = ui.selectedPlayerId ? Engine.getPlayer(state, ui.selectedPlayerId) : players[0];
     if (selected && selected.clubId === club.id) ui.selectedPlayerId = selected.id;
+    const availability = Engine.squadAvailabilityReport(state, club.id);
+    const development = Engine.squadDevelopmentReport(state, club.id);
 
     return `
+      <div class="grid four">
+        ${metric("Available", availability.available, `${availability.total} player squad`)}
+        ${metric("Injured", availability.injured, `${availability.suspended} suspended`)}
+        ${metric("Fitness Watch", availability.lowFitness + availability.doubtful, `${availability.highRisk} high risk`)}
+        ${metric("Prospects", development.prospects.length, `${development.risers.length} improving`)}
+      </div>
+      <div class="squad-insights">
+        ${renderAvailabilityWatch(availability)}
+        ${renderDevelopmentWatch(development)}
+      </div>
       ${renderPlayerToolbar("squad")}
       <div class="grid ${selected ? "two" : ""}">
         <div class="panel">
@@ -351,6 +370,58 @@
           ${renderPlayerTable(players, "squad")}
         </div>
         ${selected ? `<div class="panel">${renderPlayerDetail(selected)}</div>` : ""}
+      </div>
+    `;
+  }
+
+  function renderAvailabilityWatch(report) {
+    const items = report.list || [];
+    return `
+      <div class="panel">
+        <div class="ratings-heading">
+          <h2 class="panel-title">Availability Watch</h2>
+          <span class="pill ${report.highRisk ? "amber" : "green"}">${report.highRisk} high risk</span>
+        </div>
+        ${items.length ? `
+          <div class="watch-list">
+            ${items.slice(0, 5).map((item) => `
+              <button class="watch-item" data-action="view-player" data-player-id="${escapeAttr(item.player.id)}">
+                <span>
+                  <strong>${escapeHtml(item.player.name)}</strong>
+                  <small>${escapeHtml(item.status.detail)} | ${item.player.fitness}% fit</small>
+                </span>
+                <em class="badge ${item.status.tone}">${escapeHtml(item.status.label)}</em>
+              </button>
+            `).join("")}
+          </div>
+        ` : `<div class="empty-state">No immediate availability issues.</div>`}
+      </div>
+    `;
+  }
+
+  function renderDevelopmentWatch(report) {
+    const risers = report.risers || [];
+    const prospects = report.prospects || [];
+    const rows = risers.length ? risers : prospects;
+    return `
+      <div class="panel">
+        <div class="ratings-heading">
+          <h2 class="panel-title">Development Watch</h2>
+          <span class="pill blue">${prospects.length} prospects</span>
+        </div>
+        ${rows.length ? `
+          <div class="watch-list">
+            ${rows.slice(0, 5).map((row) => `
+              <button class="watch-item" data-action="view-player" data-player-id="${escapeAttr(row.player.id)}">
+                <span>
+                  <strong>${escapeHtml(row.player.name)}</strong>
+                  <small>${row.player.age} yrs | ${row.growthRoom} growth room | ${Engine.trainingFocusLabel(row.player.trainingFocus)}</small>
+                </span>
+                <em class="badge ${row.delta > 0 ? "green" : "blue"}">${developmentDeltaLabel(row.delta)}</em>
+              </button>
+            `).join("")}
+          </div>
+        ` : `<div class="empty-state">No development movement yet.</div>`}
       </div>
     `;
   }
@@ -468,7 +539,7 @@
   }
 
   function renderLineupCard(player, source, slotIndex) {
-    const unavailable = Engine.isInjured(state, player) || player.contractYears <= 0;
+    const unavailable = Engine.isUnavailable(state, player);
     return `
       <div
         class="lineup-card ${source === "pool" ? "pool-card" : ""} ${source === "bench" ? "bench-card" : ""} ${unavailable ? "unavailable" : ""}"
@@ -535,6 +606,129 @@
         </div>
       </div>
     `;
+  }
+
+  function renderTraining() {
+    const club = activeClub();
+    const next = Engine.getNextFixture(state, club.id);
+    const calendar = Engine.getTrainingCalendar(state, club.id, 10);
+    const recommendations = Engine.trainingRecommendations(state, club.id);
+    const report = club.trainingReport;
+    const familiarity = club.matchPrepFamiliarity || {};
+    const activePrep = club.matchPrep || "balanced";
+    const squad = Engine.clubPlayers(state, club.id);
+    const avgFitness = round(avg(squad.map((player) => player.fitness)), 1);
+    const avgSharpness = round(avg(squad.map((player) => player.sharpness)), 1);
+    const load = report ? report.load : calendar[0] ? calendar[0].load : 0;
+
+    return `
+      <div class="grid four">
+        ${metric("Weekly Plan", Engine.trainingPlanLabel(club.trainingPlan || "balanced"), `${loadTone(load)} load`)}
+        ${metric("Match Prep", Engine.matchPrepLabel(activePrep), `${round(familiarity[activePrep] || 0, 1)} familiarity`)}
+        ${metric("Fitness", `${avgFitness}%`, `${avgSharpness}% sharpness`)}
+        ${metric("Next Match", next ? Engine.formatGameDate(next.date) : "-", next ? nextFixtureLabel(next) : "Season complete")}
+      </div>
+      <div class="training-layout" style="margin-top:14px">
+        <div class="panel">
+          <div class="ratings-heading">
+            <h2 class="panel-title">Weekly Training</h2>
+            <span class="pill ${load > 1.6 ? "amber" : "green"}">${loadTone(load)}</span>
+          </div>
+          <div class="training-controls">
+            <div class="tactic-card">
+              <label for="weekly-training-plan">Training Plan</label>
+              <select id="weekly-training-plan" data-action="set-training-plan">
+                ${Object.entries(Engine.TRAINING_PLANS).map(([key, plan]) => `<option value="${escapeAttr(key)}" ${club.trainingPlan === key ? "selected" : ""}>${escapeHtml(plan.label)}</option>`).join("")}
+              </select>
+              <p>${escapeHtml((Engine.TRAINING_PLANS[club.trainingPlan] || Engine.TRAINING_PLANS.balanced).description)}</p>
+            </div>
+            <div class="tactic-card">
+              <label for="match-prep-plan">Match Preparation</label>
+              <select id="match-prep-plan" data-action="set-match-prep">
+                ${Object.entries(Engine.MATCH_PREP).map(([key, prep]) => `<option value="${escapeAttr(key)}" ${activePrep === key ? "selected" : ""}>${escapeHtml(prep.label)}</option>`).join("")}
+              </select>
+              <p>${escapeHtml((Engine.MATCH_PREP[activePrep] || Engine.MATCH_PREP.balanced).description)}</p>
+            </div>
+          </div>
+          <div class="effect-stack" style="margin-top:12px">
+            ${effectMeter("Load", load * 35, "Training intensity and injury pressure")}
+            ${effectMeter("Prep Familiarity", familiarity[activePrep] || 0, "How ready the team is for the selected prep")}
+            ${effectMeter("Squad Freshness", avgFitness, "Condition across the squad")}
+            ${effectMeter("Match Sharpness", avgSharpness, "Rhythm and training tempo")}
+          </div>
+        </div>
+        <div class="panel">
+          <h2 class="panel-title">Staff Recommendations</h2>
+          <div class="recommendation-list">
+            ${recommendations.map((item) => `
+              <div class="message ${item.tone === "red" ? "bad" : item.tone === "amber" ? "warn" : item.tone === "green" ? "good" : ""}">
+                <strong>${escapeHtml(item.title)}</strong><br>${escapeHtml(item.body)}
+              </div>
+            `).join("")}
+          </div>
+        </div>
+        <div class="panel training-calendar-panel">
+          <h2 class="panel-title">Training Calendar</h2>
+          <div class="training-calendar">
+            ${calendar.map((day) => renderTrainingDay(day)).join("")}
+          </div>
+        </div>
+        <div class="panel">
+          <h2 class="panel-title">Latest Session</h2>
+          ${report ? renderTrainingReport(report) : `<div class="empty-state">Continue a day to generate the first training report.</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTrainingDay(day) {
+    const match = !!day.fixtureId;
+    const tone = match ? "match" : day.type === "Rest Day" || day.type === "Post-Match Recovery" ? "recovery" : day.load > 1.5 ? "heavy" : "normal";
+    return `
+      <div class="training-day ${tone}">
+        <div>
+          <strong>${escapeHtml(day.label)}</strong>
+          <span>${escapeHtml(day.type)}</span>
+        </div>
+        <div>
+          <em>${match ? `${escapeHtml(day.venue)} vs ${escapeHtml(clubName(day.opponentId))}` : escapeHtml(day.planLabel)}</em>
+          <small>${escapeHtml(day.matchPrepLabel)} | ${loadTone(day.load)}</small>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTrainingReport(report) {
+    return `
+      <div class="training-report">
+        <div class="preview-row"><span>Date</span><strong>${escapeHtml(Engine.formatGameDate(report.date))}</strong></div>
+        <div class="preview-row"><span>Session</span><strong>${escapeHtml(report.type)}</strong></div>
+        <div class="preview-row"><span>Plan</span><strong>${escapeHtml(report.planLabel)}</strong></div>
+        <div class="preview-row"><span>Match Prep</span><strong>${escapeHtml(report.matchPrepLabel)}</strong></div>
+        <div class="preview-row"><span>Average Fitness</span><strong>${report.averageFitness}%</strong></div>
+        <div class="preview-row"><span>Average Sharpness</span><strong>${report.averageSharpness}%</strong></div>
+        <div class="preview-row"><span>Training Injuries</span><strong>${report.injuries}</strong></div>
+        <div class="preview-row"><span>Development</span><strong>${report.development || 0}</strong></div>
+        ${(report.growth || []).length ? `
+          <div class="timeline compact-timeline">
+            ${report.growth.map((item) => `
+              <div class="timeline-item">
+                <strong>${escapeHtml(item.playerName)}</strong>
+                <span>${escapeHtml(attributeLabel(item.attribute))} ${item.before} -> ${item.after}</span>
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }
+
+  function loadTone(load) {
+    if (load <= 0.2) return "Rest";
+    if (load < 0.7) return "Light";
+    if (load < 1.35) return "Medium";
+    if (load < 1.9) return "High";
+    return "Heavy";
   }
 
   function renderTacticCard(group, club) {
@@ -666,14 +860,16 @@
   function renderActionQueue() {
     const squad = Engine.clubPlayers(state, state.activeClubId);
     const injured = squad.filter((player) => Engine.isInjured(state, player));
+    const suspended = squad.filter((player) => Engine.isSuspended(state, player));
     const expiring = squad.filter((player) => player.contractYears <= 1);
-    const tired = squad.filter((player) => player.fitness < 55 && !Engine.isInjured(state, player));
+    const tired = squad.filter((player) => player.fitness < 55 && !Engine.isUnavailable(state, player));
     const offers = state.transfers.offers.filter((offer) => offer.status === "pending");
     const next = Engine.getNextFixture(state, state.activeClubId);
     const matchToday = next && state.calendar && Engine.daysBetween(state.calendar.currentDate, next.date) <= 0;
     const items = [
       ...(matchToday ? [["Matchday", nextFixtureLabel(next), "green"]] : []),
       ...injured.slice(0, 3).map((player) => ["Injury", `${player.name}: ${Engine.availabilityLabel(state, player)}`, "red"]),
+      ...suspended.slice(0, 2).map((player) => ["Suspension", `${player.name}: ${Engine.playerAvailabilityStatus(state, player).detail}`, "red"]),
       ...expiring.slice(0, 3).map((player) => ["Contract", `${player.name}: ${player.contractYears} season${player.contractYears === 1 ? "" : "s"} left`, "amber"]),
       ...tired.slice(0, 3).map((player) => ["Fitness", `${player.name}: ${player.fitness}% fitness`, "amber"]),
       ...offers.slice(0, 3).map((offer) => ["Offer", `${Engine.getPlayer(state, offer.playerId)?.name || "Player"} bid from ${clubName(offer.fromClubId)}`, "blue"])
@@ -830,10 +1026,24 @@
           <option value="all" ${position === "all" ? "selected" : ""}>All positions</option>
           ${Data.POSITIONS.map((pos) => `<option value="${pos}" ${position === pos ? "selected" : ""}>${pos}</option>`).join("")}
         </select>
+        ${scope === "squad" ? `
+          <select data-ui="squadAvailability">
+            ${[
+              ["all", "All availability"],
+              ["available", "Available"],
+              ["injured", "Injured"],
+              ["suspended", "Suspended"],
+              ["lowFitness", "Low fitness"],
+              ["highRisk", "High risk"],
+              ["prospects", "Prospects"]
+            ].map(([value, label]) => `<option value="${value}" ${ui.squadAvailability === value ? "selected" : ""}>${label}</option>`).join("")}
+          </select>
+        ` : ""}
         <select data-ui="${scope}Sort">
           ${[
             ["currentAbility", "Current Ability"],
             ["potential", "Potential"],
+            ...(scope === "squad" ? [["fitness", "Fitness"], ["sharpness", "Sharpness"], ["morale", "Morale"]] : []),
             ["age", "Age"],
             ["value", "Value"],
             ["wage", "Wage"],
@@ -851,31 +1061,39 @@
         <table>
           <thead>
             <tr>
-              <th>Player</th><th>Pos</th><th>Age</th><th>Status</th><th>CA</th><th>PA</th><th>Value</th><th>Wage</th><th>Contract</th><th>Fitness</th><th>Form</th><th></th>
+              <th>Player</th><th>Pos</th><th>Age</th><th>Status</th><th>CA</th><th>PA</th><th>Dev</th><th>Value</th><th>Wage</th><th>Contract</th><th>Fitness</th><th>Sharp</th><th>Risk</th><th>Form</th><th></th>
             </tr>
           </thead>
           <tbody>
-            ${players.map((player) => `
-              <tr class="${ui.selectedPlayerId === player.id ? "highlight" : ""}">
-                <td><span class="player-name">${escapeHtml(player.name)}</span></td>
-                <td>${positionBadge(player.position)}</td>
-                <td>${player.age}</td>
-                <td>${statusBadge(player)}</td>
-                <td>${player.currentAbility}</td>
-                <td>${player.potential}</td>
-                <td>${Engine.formatMoney(player.value)}</td>
-                <td>${Engine.formatMoney(player.wage)}</td>
-                <td>${player.contractYears <= 1 ? `<span class="badge amber">${player.contractYears} yr</span>` : `${player.contractYears} yrs`}</td>
-                <td>${bar(player.fitness, player.fitness > 70 ? "green" : player.fitness > 45 ? "amber" : "red")}</td>
-                <td>${formRatings(player.form)}</td>
-                <td class="right">
-                  <div class="table-actions">
-                    ${context === "squad" && player.contractYears <= 1 ? `<button class="btn-compact" data-action="renew-contract" data-player-id="${player.id}">Renew</button>` : ""}
-                    <button class="btn-compact" data-action="view-player" data-player-id="${player.id}">${context === "squad" ? "View" : "Profile"}</button>
-                  </div>
-                </td>
-              </tr>
-            `).join("")}
+            ${players.map((player) => {
+              const report = context === "squad" ? Engine.playerDevelopmentReport(state, player.id) : null;
+              const risk = report ? report.risk : Engine.injuryRiskLevel(state, player);
+              return `
+                <tr class="${ui.selectedPlayerId === player.id ? "highlight" : ""}">
+                  <td><span class="player-name">${escapeHtml(player.name)}</span></td>
+                  <td>${positionBadge(player.position)}</td>
+                  <td>${player.age}</td>
+                  <td>${statusBadge(player)}</td>
+                  <td>${player.currentAbility}</td>
+                  <td>${player.potential}</td>
+                  <td>${context === "squad" ? `<span class="badge ${report.delta > 0 ? "green" : report.delta < 0 ? "amber" : "blue"}">${developmentDeltaLabel(report.delta)}</span>` : "-"}</td>
+                  <td>${Engine.formatMoney(player.value)}</td>
+                  <td>${Engine.formatMoney(player.wage)}</td>
+                  <td>${player.contractYears <= 1 ? `<span class="badge amber">${player.contractYears} yr</span>` : `${player.contractYears} yrs`}</td>
+                  <td>${bar(player.fitness, player.fitness > 70 ? "green" : player.fitness > 45 ? "amber" : "red")}</td>
+                  <td>${bar(player.sharpness, player.sharpness > 70 ? "green" : player.sharpness > 45 ? "amber" : "red")}</td>
+                  <td><span class="badge ${risk.tone}">${escapeHtml(risk.label)}</span></td>
+                  <td>${formRatings(player.form)}</td>
+                  <td class="right">
+                    <div class="table-actions">
+                      ${context === "squad" && player.contractYears <= 1 ? `<button class="btn-compact" data-action="renew-contract" data-player-id="${player.id}">Renew</button>` : ""}
+                      ${context === "squad" ? `<button class="btn-compact" data-action="rest-player" data-player-id="${player.id}">Rest</button>` : ""}
+                      <button class="btn-compact" data-action="view-player" data-player-id="${player.id}">${context === "squad" ? "View" : "Profile"}</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
           </tbody>
         </table>
       </div>
@@ -952,38 +1170,80 @@
     const stats = player.seasonStats;
     const history = player.history.slice(0, 6);
     const development = player.development.slice(-5);
+    const report = Engine.playerDevelopmentReport(state, player.id);
+    const availability = report.availability;
+    const risk = report.risk;
     return `
       <div class="player-detail">
         <div>
-          <h2 class="panel-title">${escapeHtml(player.name)}</h2>
+          <div class="player-profile-head">
+            <div>
+              <h2 class="panel-title">${escapeHtml(player.name)}</h2>
+              <div class="small-muted">${escapeHtml(player.nationality)} | ${escapeHtml(player.foot)} foot | ${player.height} cm</div>
+            </div>
+            <span class="badge ${availability.tone}">${escapeHtml(availability.label)}</span>
+          </div>
           <div class="metric-grid">
             ${metric("Position", player.position, player.secondaryPositions.join(", ") || "No secondary")}
-            ${metric("Age", player.age, `${player.height} cm | ${player.weight} kg`)}
+            ${metric("Age", player.age, `${report.stage} | ${player.weight} kg`)}
             ${metric("Ability", `${player.currentAbility} / ${player.potential}`, "Current / Potential")}
-            ${metric("Contract", `${player.contractYears} yrs`, `${Engine.formatMoney(player.wage)} wage`)}
-            ${metric("Status", Engine.availabilityLabel(state, player), "Availability")}
+            ${metric("Development", developmentDeltaLabel(report.delta), `${report.growthRoom} growth room`)}
+            ${metric("Fitness", `${player.fitness}%`, `${player.sharpness}% sharpness`)}
+            ${metric("Risk", risk.label, risk.detail)}
           </div>
-          <div class="field" style="margin-top:12px">
-            <label for="training-focus">Training Focus</label>
-            <select id="training-focus" data-action="set-training-focus" data-player-id="${player.id}">
-              ${Object.keys(Engine.TRAINING_FOCUS).map((focus) => `<option value="${focus}" ${player.trainingFocus === focus ? "selected" : ""}>${Engine.trainingFocusLabel(focus)}</option>`).join("")}
-            </select>
+          <div class="player-management-grid">
+            <div class="field">
+              <label for="training-focus">Training Focus</label>
+              <select id="training-focus" data-action="set-training-focus" data-player-id="${player.id}">
+                ${Object.keys(Engine.TRAINING_FOCUS).map((focus) => `<option value="${focus}" ${player.trainingFocus === focus ? "selected" : ""}>${Engine.trainingFocusLabel(focus)}</option>`).join("")}
+              </select>
+            </div>
+            <div class="field">
+              <label for="individual-plan">Individual Plan</label>
+              <select id="individual-plan" data-action="set-individual-plan" data-player-id="${player.id}">
+                ${Object.keys(Engine.INDIVIDUAL_PLANS).map((plan) => `<option value="${plan}" ${player.individualPlan === plan ? "selected" : ""}>${Engine.individualPlanLabel(plan)}</option>`).join("")}
+              </select>
+            </div>
+            <button class="btn-primary" data-action="rest-player" data-player-id="${player.id}">Rest / Rehab</button>
           </div>
-          <div style="margin-top:12px" class="progress-list">
+          <div class="progress-list player-stat-row">
             ${progressCard("Apps", stats.apps)}
             ${progressCard("Goals", stats.goals)}
             ${progressCard("Assists", stats.assists)}
           </div>
+          <div class="profile-card-grid">
+            <div class="profile-card">
+              <strong>Availability</strong>
+              <span>${escapeHtml(availability.detail)}</span>
+              ${bar(player.fitness, player.fitness > 70 ? "green" : player.fitness > 45 ? "amber" : "red")}
+            </div>
+            <div class="profile-card">
+              <strong>Potential Progress</strong>
+              <span>${report.progress}% of ceiling</span>
+              ${bar(report.progress, report.progress > 86 ? "green" : report.progress > 68 ? "amber" : "red")}
+            </div>
+          </div>
           ${player.source ? renderSourceStats(player.source) : ""}
           <h3 class="panel-title" style="margin-top:14px">Development</h3>
-          <div class="timeline">
-            ${development.map((item) => `
-              <div class="timeline-item">
-                <strong>S${item.season}</strong>
-                <span>CA ${item.currentAbility} | PA ${item.potential} | Passing ${item.attributes.passing} | Finishing ${item.attributes.finishing}</span>
-              </div>
-            `).join("")}
-          </div>
+          ${report.events.length ? `
+            <div class="timeline">
+              ${report.events.map((item) => `
+                <div class="timeline-item">
+                  <strong>${escapeHtml(Engine.formatGameDate(item.date))}</strong>
+                  <span>${escapeHtml(attributeLabel(item.attribute))} ${item.before} -> ${item.after} | ${Engine.trainingFocusLabel(item.focus)}</span>
+                </div>
+              `).join("")}
+            </div>
+          ` : `
+            <div class="timeline">
+              ${development.map((item) => `
+                <div class="timeline-item">
+                  <strong>S${item.season}</strong>
+                  <span>CA ${item.currentAbility} | PA ${item.potential} | Passing ${item.attributes.passing} | Finishing ${item.attributes.finishing}</span>
+                </div>
+              `).join("")}
+            </div>
+          `}
           <h3 class="panel-title" style="margin-top:14px">Career</h3>
           ${history.length ? `
             <div class="timeline">
@@ -997,7 +1257,21 @@
           ` : `<div class="empty-state">No completed season history.</div>`}
         </div>
         <div>
-          <h3 class="panel-title">Attributes</h3>
+          <h3 class="panel-title">Role Fit</h3>
+          <div class="role-fit-list">
+            ${report.roleFits.map((item) => `
+              <div class="role-fit-item">
+                <span>${positionBadge(item.position)}${item.natural ? `<em>Natural</em>` : ""}</span>
+                ${bar(item.score, item.score > 78 ? "green" : item.score > 62 ? "amber" : "red")}
+                <strong>${item.score}</strong>
+              </div>
+            `).join("")}
+          </div>
+          <h3 class="panel-title" style="margin-top:14px">Top Attributes</h3>
+          <div class="attribute-chip-list">
+            ${report.topAttributes.map((item) => `<span class="attribute-chip"><strong>${item.value}</strong>${escapeHtml(item.label)}</span>`).join("")}
+          </div>
+          <h3 class="panel-title" style="margin-top:14px">Attributes</h3>
           <div class="attribute-grid">
             ${Data.ATTRIBUTES.map((attr) => `
               <div class="attribute">
@@ -1762,6 +2036,13 @@
       render();
       return;
     }
+    if (action === "auto-training") {
+      const result = Engine.autoSetTrainingPlan(state, state.activeClubId);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
     if (action === "save-lineup") {
       const result = Engine.setLineup(state, state.activeClubId, Array.from(ui.lineupSelection));
       Storage.save(state);
@@ -1809,6 +2090,13 @@
     }
     if (action === "renew-contract") {
       const result = Engine.renewContract(state, actionEl.dataset.playerId);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (action === "rest-player") {
+      const result = Engine.restPlayer(state, actionEl.dataset.playerId);
       Storage.save(state);
       toast(result.message, result.ok ? "good" : "bad");
       render();
@@ -1883,8 +2171,29 @@
       render();
       return;
     }
+    if (target.dataset.action === "set-training-plan") {
+      const result = Engine.setTrainingPlan(state, state.activeClubId, target.value);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (target.dataset.action === "set-match-prep") {
+      const result = Engine.setMatchPrep(state, state.activeClubId, target.value);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
     if (target.dataset.action === "set-training-focus") {
       const result = Engine.setTrainingFocus(state, target.dataset.playerId, target.value);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (target.dataset.action === "set-individual-plan") {
+      const result = Engine.setIndividualPlan(state, target.dataset.playerId, target.value);
       Storage.save(state);
       toast(result.message, result.ok ? "good" : "bad");
       render();
@@ -1974,6 +2283,7 @@
   function setUiValue(key, value) {
     if (key === "squadSearch") ui.squadSearch = value;
     if (key === "squadPosition") ui.squadPosition = value;
+    if (key === "squadAvailability") ui.squadAvailability = value;
     if (key === "squadSort") ui.squadSort = value;
     if (key === "marketSearch") ui.marketSearch = value;
     if (key === "marketPosition") ui.marketPosition = value;
@@ -2044,7 +2354,7 @@
   function currentLineupIds(club) {
     if (!club) return [];
     const squadIds = new Set(club.squad || []);
-    let lineup = (club.lineup || []).filter((id) => squadIds.has(id) && state.players[id] && !Engine.isInjured(state, state.players[id]));
+    let lineup = (club.lineup || []).filter((id) => squadIds.has(id) && state.players[id] && !Engine.isUnavailable(state, state.players[id]));
     if (lineup.length !== 11) {
       lineup = Engine.autoSelectLineup(state, club.id);
       club.lineup = lineup;
@@ -2059,11 +2369,11 @@
     const lineupIds = new Set(lineup || currentLineupIds(club));
     const availableCount = Math.max(0, (club.squad || []).filter((id) => {
       const player = state.players[id];
-      return squadIds.has(id) && !lineupIds.has(id) && player && !Engine.isInjured(state, player) && player.contractYears > 0;
+      return squadIds.has(id) && !lineupIds.has(id) && player && !Engine.isUnavailable(state, player);
     }).length);
     let bench = (club.bench || []).filter((id, index, source) => {
       const player = state.players[id];
-      return source.indexOf(id) === index && squadIds.has(id) && player && !lineupIds.has(id) && !Engine.isInjured(state, player) && player.contractYears > 0;
+      return source.indexOf(id) === index && squadIds.has(id) && player && !lineupIds.has(id) && !Engine.isUnavailable(state, player);
     });
     const targetSize = Math.min(7, availableCount);
     if (bench.length < targetSize || bench.length !== (club.bench || []).length) {
@@ -2088,7 +2398,7 @@
     const club = activeClub();
     const player = Engine.getPlayer(state, playerId);
     if (!club || !player || player.clubId !== club.id) return;
-    if (Engine.isInjured(state, player) || player.contractYears <= 0) {
+    if (Engine.isUnavailable(state, player)) {
       toast("Player unavailable.", "bad");
       render();
       return;
@@ -2121,7 +2431,7 @@
     if (target.type === "pool-player") {
       const replacement = Engine.getPlayer(state, target.targetPlayerId);
       if ((sourceIndex < 0 && sourceBenchIndex < 0) || !replacement || replacement.clubId !== club.id) return;
-      if (Engine.isInjured(state, replacement) || replacement.contractYears <= 0) {
+      if (Engine.isUnavailable(state, replacement)) {
         toast("Replacement unavailable.", "bad");
         render();
         return;
@@ -2148,7 +2458,7 @@
     const club = activeClub();
     const player = Engine.getPlayer(state, playerId);
     if (!club || !player || player.clubId !== club.id) return;
-    if (Engine.isInjured(state, player) || player.contractYears <= 0) {
+    if (Engine.isUnavailable(state, player)) {
       toast("Player unavailable.", "bad");
       render();
       return;
@@ -2206,12 +2516,21 @@
     return `${activeHome ? "Home" : "Away"} vs ${opponent}${date}`;
   }
 
-  function filterPlayers(players, search, position) {
+  function filterPlayers(players, search, position, availability) {
     const query = search.trim().toLowerCase();
     return players.filter((player) => {
       const matchesSearch = !query || player.name.toLowerCase().includes(query) || player.nationality.toLowerCase().includes(query) || clubName(player.clubId).toLowerCase().includes(query);
       const matchesPosition = position === "all" || player.position === position || player.secondaryPositions.includes(position);
-      return matchesSearch && matchesPosition;
+      const status = Engine.playerAvailabilityStatus(state, player);
+      const risk = Engine.injuryRiskLevel(state, player);
+      let matchesAvailability = true;
+      if (availability === "available") matchesAvailability = !Engine.isUnavailable(state, player) && player.fitness >= 55;
+      if (availability === "injured") matchesAvailability = status.key === "injured";
+      if (availability === "suspended") matchesAvailability = status.key === "suspended";
+      if (availability === "lowFitness") matchesAvailability = status.key === "unfit";
+      if (availability === "highRisk") matchesAvailability = risk.key === "high";
+      if (availability === "prospects") matchesAvailability = player.age <= 23 && player.potential - player.currentAbility >= 5;
+      return matchesSearch && matchesPosition && matchesAvailability;
     });
   }
 
@@ -2229,9 +2548,23 @@
     if (key === "position") return player.position;
     if (key === "age") return player.age;
     if (key === "potential") return player.potential;
+    if (key === "fitness") return player.fitness;
+    if (key === "sharpness") return player.sharpness;
+    if (key === "morale") return player.morale;
     if (key === "value") return player.value;
     if (key === "wage") return player.wage;
     return player.currentAbility;
+  }
+
+  function developmentDeltaLabel(delta) {
+    const value = Number(delta) || 0;
+    if (value > 0) return `+${value} CA`;
+    if (value < 0) return `${value} CA`;
+    return "0 CA";
+  }
+
+  function attributeLabel(key) {
+    return Data.ATTRIBUTE_LABELS[key] || key;
   }
 
   function metric(label, value, delta) {
@@ -2288,9 +2621,8 @@
   }
 
   function statusBadge(player) {
-    const label = Engine.availabilityLabel(state, player);
-    const tone = Engine.isInjured(state, player) ? "red" : label === "Expiring" || label === "Low fitness" || label === "Out of contract" ? "amber" : "green";
-    return `<span class="badge ${tone}">${escapeHtml(label)}</span>`;
+    const status = Engine.playerAvailabilityStatus(state, player);
+    return `<span class="badge ${status.tone}">${escapeHtml(status.label)}</span>`;
   }
 
   function transferTypeLabel(type) {
