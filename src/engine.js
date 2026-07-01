@@ -369,6 +369,7 @@
         shortlist: [],
         preAgreements: [],
         history: [],
+        news: [],
         freeAgentIds: []
       },
       inbox: [],
@@ -2242,6 +2243,14 @@
     return maybeGenerateAiOffer(state);
   }
 
+  function maybeProcessDailyAiClubTransfer(state) {
+    const window = transferWindowStatus(state);
+    if (!window.isOpen) return null;
+    const chance = window.isDeadlineDay ? 0.32 : 0.09;
+    if (random(state) > chance) return null;
+    return processAiClubTransfer(state, { allowRumor: true });
+  }
+
   function simulateFixturesForDate(state, date) {
     const dueRounds = state.league.schedule.filter((roundData) => {
       const hasUnplayed = roundData.fixtures.some((fixture) => !fixture.played);
@@ -2288,8 +2297,9 @@
     updateMatchPrepFamiliarity(state);
     processScoutingAssignmentsDaily(state);
     const offer = maybeGenerateDailyAiOffer(state);
+    const aiMarketMove = maybeProcessDailyAiClubTransfer(state);
     const matchday = simulateFixturesForDate(state, processedDate);
-    if (offer || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
+    if (offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
 
     let seasonEnded = false;
     let seasonSummary = null;
@@ -2309,6 +2319,7 @@
       fixtures: matchday.fixtures,
       activeMatch: matchday.activeMatch,
       matchday: matchday.fixtures.length > 0,
+      aiMarketMove,
       seasonEnded,
       seasonSummary
     };
@@ -2339,6 +2350,7 @@
     processTransferPreAgreements(state);
     processScoutingAssignments(state);
     maybeGenerateAiOffer(state);
+    maybeProcessDailyAiClubTransfer(state);
     refreshTransferMarket(state);
 
     if (state.league.currentRound >= state.league.schedule.length) {
@@ -2704,6 +2716,7 @@
     state.transfers.shortlist = state.transfers.shortlist || [];
     state.transfers.preAgreements = state.transfers.preAgreements || [];
     state.transfers.history = state.transfers.history || [];
+    state.transfers.news = state.transfers.news || [];
     state.transfers.freeAgentIds = state.transfers.freeAgentIds || [];
     return state.transfers;
   }
@@ -2969,6 +2982,220 @@
       preAgreements,
       activity: active ? "High" : window.isOpen ? "Normal" : "Planning"
     };
+  }
+
+  function addTransferNews(state, news) {
+    const transfers = ensureTransferState(state);
+    const suffix = transfers.news.length + transfers.history.length + transfers.offers.length + transfers.preAgreements.length + 1;
+    const record = {
+      id: `news-${state.season}-${state.calendar ? state.calendar.day || 0 : 0}-${suffix}`,
+      season: state.season,
+      round: state.league.currentRound + 1,
+      date: state.calendar ? state.calendar.currentDate : null,
+      type: news.type || "market",
+      tone: news.tone || "blue",
+      priority: news.priority || "normal",
+      title: news.title,
+      body: news.body,
+      playerId: news.playerId || null,
+      fromClubId: news.fromClubId || null,
+      toClubId: news.toClubId || null,
+      fee: news.fee || 0
+    };
+    transfers.news.unshift(record);
+    transfers.news = transfers.news.slice(0, 80);
+    return record;
+  }
+
+  function addTransferNewsFromRecord(state, transferRecord) {
+    if (!["transfer", "loan", "free-agent"].includes(transferRecord.type)) return null;
+    const player = getPlayer(state, transferRecord.playerId) || { name: transferRecord.playerName, currentAbility: 0, position: "Player" };
+    const fromClub = transferRecord.fromClubId ? getClub(state, transferRecord.fromClubId) : null;
+    const toClub = transferRecord.toClubId ? getClub(state, transferRecord.toClubId) : null;
+    if (!player || !toClub) return null;
+    const activeInvolved = transferRecord.fromClubId === state.activeClubId || transferRecord.toClubId === state.activeClubId;
+    const major = activeInvolved || transferRecord.fee >= 22000000 || player.currentAbility >= 80;
+    let title = "";
+    let body = "";
+    let tone = "blue";
+    if (transferRecord.type === "transfer") {
+      title = `${toClub.name} sign ${player.name}`;
+      body = `${fromClub ? fromClub.name : "Free agency"} accepted ${formatMoney(transferRecord.fee)} for the ${player.position}.`;
+      tone = major ? "green" : "blue";
+    } else if (transferRecord.type === "loan") {
+      title = `${player.name} joins ${toClub.name} on loan`;
+      body = `${fromClub ? fromClub.name : "Parent club"} sanctioned a season-long loan move.`;
+      tone = "amber";
+    } else {
+      title = `${toClub.name} sign free agent ${player.name}`;
+      body = `${player.name} agreed terms after leaving their previous club.`;
+      tone = "green";
+    }
+    const item = addTransferNews(state, {
+      type: transferRecord.type,
+      tone,
+      priority: major ? "major" : "normal",
+      title,
+      body,
+      playerId: transferRecord.playerId,
+      fromClubId: transferRecord.fromClubId,
+      toClubId: transferRecord.toClubId,
+      fee: transferRecord.fee
+    });
+    if (major && !activeInvolved) {
+      addInbox(state, "Market News", `${title}. ${body}`);
+    }
+    return item;
+  }
+
+  function sellerCanLosePlayer(state, seller, player) {
+    if (!seller || !player || seller.id === state.activeClubId) return false;
+    if ((seller.squad || []).length <= 22) return false;
+    const squad = clubPlayers(state, seller.id);
+    const depth = squad.filter((item) => item.position === player.position || (item.secondaryPositions || []).includes(player.position)).length;
+    const roleRank = squad.slice().sort((a, b) => b.currentAbility - a.currentAbility).findIndex((item) => item.id === player.id);
+    const keyPlayer = roleRank >= 0 && roleRank < 5;
+    if (depth <= desiredDepth(player.position) && keyPlayer && player.contractYears > 1 && player.morale >= 42) return false;
+    return true;
+  }
+
+  function aiEstimatedTransferCost(state, player) {
+    const stance = sellerStance(state, player);
+    const leverage = player.contractYears <= 1 ? 0.9 : player.age >= 31 ? 0.94 : 1;
+    return moneyRound(Math.max(player.value * 0.72, player.value * stance.askingMultiplier * leverage));
+  }
+
+  function aiTransferCandidateScore(state, buyer, need, player, estimatedFee) {
+    const positions = [player.position].concat(player.secondaryPositions || []);
+    const positionFit = positions.includes(need.position) ? 18 : -6;
+    const ageFit = player.age <= 22 ? 12 : player.age <= 26 ? 9 : player.age <= 29 ? 5 : player.age <= 32 ? -3 : -10;
+    const growth = clamp((player.potential || player.currentAbility) - player.currentAbility, 0, 20);
+    const feeFit = clamp(36 - estimatedFee / Math.max(1, buyer.transferBudget) * 34, -16, 36);
+    const contractFit = player.contractYears <= 1 ? 8 : 0;
+    const qualityFit = clamp((player.currentAbility - Math.max(54, buyer.reputation - 11)) * 1.2, -18, 28);
+    return round(need.score * 0.38 + player.currentAbility * 0.28 + positionFit + ageFit + growth * 0.45 + feeFit + contractFit + qualityFit, 1);
+  }
+
+  function aiTransferCandidates(state, buyer, need) {
+    const wageRoom = Math.max(0, buyer.wageBudget - weeklyWageSpend(state, buyer.id));
+    return Object.values(state.players)
+      .filter((player) => {
+        if (!player || !player.clubId || player.clubId === buyer.id || player.clubId === state.activeClubId || player.loanUntilSeason) return false;
+        const seller = getClub(state, player.clubId);
+        if (!seller || seller.id === state.activeClubId || !sellerCanLosePlayer(state, seller, player)) return false;
+        const positions = [player.position].concat(player.secondaryPositions || []);
+        if (!positions.includes(need.position)) return false;
+        const estimatedFee = aiEstimatedTransferCost(state, player);
+        const estimatedWage = moneyRound(player.wage * 1.12);
+        if (estimatedFee > buyer.transferBudget * 0.82) return false;
+        if (weeklyWageSpend(state, buyer.id) + estimatedWage > buyer.wageBudget || estimatedWage > wageRoom) return false;
+        return player.currentAbility >= Math.max(50, buyer.reputation - 18);
+      })
+      .map((player) => {
+        const estimatedFee = aiEstimatedTransferCost(state, player);
+        return {
+          player,
+          estimatedFee,
+          score: aiTransferCandidateScore(state, buyer, need, player, estimatedFee)
+        };
+      })
+      .sort((a, b) => b.score - a.score || b.player.currentAbility - a.player.currentAbility);
+  }
+
+  function addAiTransferRumor(state, buyer, player, need) {
+    const seller = getClub(state, player.clubId);
+    return addTransferNews(state, {
+      type: "rumor",
+      tone: "amber",
+      priority: player.currentAbility >= 78 ? "major" : "normal",
+      title: `${buyer.name} eye ${player.name}`,
+      body: `${buyer.name} are monitoring ${player.name} as a ${need.position} option before the window closes.`,
+      playerId: player.id,
+      fromClubId: seller ? seller.id : null,
+      toClubId: buyer.id,
+      fee: aiEstimatedTransferCost(state, player)
+    });
+  }
+
+  function completeAiClubTransfer(state, buyer, player, estimatedFee) {
+    const seller = getClub(state, player.clubId);
+    if (!seller || seller.id === state.activeClubId || buyer.id === state.activeClubId) return null;
+    const fee = moneyRound(estimatedFee * randomFloat(state, 0.96, 1.1));
+    const wage = moneyRound(player.wage * randomFloat(state, 1.02, 1.2));
+    if (fee > buyer.transferBudget) return null;
+    if (weeklyWageSpend(state, buyer.id) + wage > buyer.wageBudget) return null;
+    transferPlayer(state, player.id, seller.id, buyer.id, fee, wage);
+    return {
+      type: "transfer",
+      playerId: player.id,
+      playerName: player.name,
+      fromClubId: seller.id,
+      toClubId: buyer.id,
+      fee,
+      wage,
+      recordId: state.transfers.history[0] ? state.transfers.history[0].id : null
+    };
+  }
+
+  function completeAiFreeAgentSigning(state, buyer, need) {
+    const wageRoom = Math.max(0, buyer.wageBudget - weeklyWageSpend(state, buyer.id));
+    const candidates = (state.transfers.freeAgentIds || [])
+      .map((id) => getPlayer(state, id))
+      .filter((player) => {
+        if (!player || player.clubId || player.loanUntilSeason) return false;
+        const positions = [player.position].concat(player.secondaryPositions || []);
+        return positions.includes(need.position) && player.wage * 1.1 <= wageRoom && player.currentAbility >= Math.max(48, buyer.reputation - 20);
+      })
+      .sort((a, b) => b.currentAbility - a.currentAbility || b.potential - a.potential);
+    const player = candidates[0];
+    if (!player) return null;
+    const wage = moneyRound(player.wage * randomFloat(state, 1.02, 1.18));
+    completeFreeAgentSigning(state, player.id, buyer.id, wage);
+    return {
+      type: "free-agent",
+      playerId: player.id,
+      playerName: player.name,
+      fromClubId: null,
+      toClubId: buyer.id,
+      fee: 0,
+      wage,
+      recordId: state.transfers.history[0] ? state.transfers.history[0].id : null
+    };
+  }
+
+  function processAiClubTransfer(state, options) {
+    ensureTransferState(state);
+    const window = transferWindowStatus(state);
+    if (!window.isOpen) return null;
+    const buyers = shuffle(state, state.league.clubs.filter((club) => {
+      if (!club || club.id === state.activeClubId || club.transferBudget < 750000) return false;
+      return weeklyWageSpend(state, club.id) < club.wageBudget;
+    }));
+    for (const buyer of buyers) {
+      const report = recruitmentNeedReport(state, buyer.id);
+      const needs = report.needs.filter((need) => need.score >= 24).slice(0, 5);
+      const fallbackNeeds = needs.length ? needs : report.needs.slice(0, 3);
+      for (const need of fallbackNeeds) {
+        const candidates = aiTransferCandidates(state, buyer, need);
+        if (candidates.length) {
+          const target = pick(state, candidates.slice(0, Math.min(5, candidates.length)));
+          if (options && options.allowRumor && random(state) < (window.isDeadlineDay ? 0.12 : 0.22)) {
+            return {
+              type: "rumor",
+              playerId: target.player.id,
+              fromClubId: target.player.clubId,
+              toClubId: buyer.id,
+              newsId: addAiTransferRumor(state, buyer, target.player, need).id
+            };
+          }
+          const completed = completeAiClubTransfer(state, buyer, target.player, target.estimatedFee);
+          if (completed) return completed;
+        }
+        const freeAgent = completeAiFreeAgentSigning(state, buyer, need);
+        if (freeAgent) return freeAgent;
+      }
+    }
+    return null;
   }
 
   function queuePreAgreement(state, agreement) {
@@ -3520,14 +3747,18 @@
 
   function recordTransfer(state, record) {
     state.transfers.history = state.transfers.history || [];
-    state.transfers.history.unshift({
+    const savedRecord = {
       id: `tr-${state.season}-${state.league.currentRound}-${state.transfers.history.length + 1}`,
       season: state.season,
       round: state.league.currentRound + 1,
+      date: state.calendar ? state.calendar.currentDate : null,
       createdAt: new Date().toISOString(),
       ...record
-    });
+    };
+    state.transfers.history.unshift(savedRecord);
     state.transfers.history = state.transfers.history.slice(0, 1000);
+    addTransferNewsFromRecord(state, savedRecord);
+    return savedRecord;
   }
 
   function movePlayerBetweenClubs(state, playerId, fromClubId, toClubId) {
@@ -3721,6 +3952,7 @@
     recruitmentProfile,
     negotiationProfile,
     deadlineDayReport,
+    processAiClubTransfer,
     shortlistPlayers,
     isShortlisted,
     addToShortlist,

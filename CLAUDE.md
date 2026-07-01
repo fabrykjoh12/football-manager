@@ -146,25 +146,37 @@ Design target:
 - Offer modal now explains stance, interest, suggested fee, suggested wage, and window registration outcome.
 - Engine regression tests cover negotiation profile output and deadline-day detection.
 
+### AI Club Movement + Transfer News
+
+- AI clubs can complete non-user transfers during open transfer windows.
+- AI buyer logic checks squad needs, transfer budget, wage room, seller depth, player age, ability, potential, and contract leverage.
+- AI movement avoids directly moving players in or out of the user's club.
+- Free agents can be signed by AI clubs when they fit a squad need and wage budget.
+- Completed transfers now create structured transfer news items.
+- High-profile non-user deals create inbox market-news messages.
+- Transfers screen has a latest-news panel with deals, rumors, free-agent moves, dates, fees, and context.
+- Daily simulation can surface AI market activity during transfer windows, with more activity on deadline day.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
 - `3355836` Add recruitment centre and shortlist
 - `7f60dbd` Add transfer windows and project roadmap
+- `402c010` Add negotiation intelligence and deadline day panel
 
-The current uncommitted phase before this document update was Deadline Day + Negotiations 2.0.
+The current uncommitted phase before this document update was AI Club Movement + Transfer News.
 
 ## Current Roadmap
 
-### Next Phase: AI Club Movement + Transfer News
+### Next Phase: Transfer News 2.0 + AI Market Polish
 
 Planned work:
 
-- AI clubs can buy, sell, loan, and release players without user involvement.
-- AI clubs use squad depth, age profile, finances, and league position to decide needs.
-- Transfer news feed with rumors, bids, completed deals, failed moves, and deadline-day stories.
+- AI loan market for prospects, squad players, and emergency depth.
+- More transfer rumors, bids, failed moves, and deadline-day stories.
 - Inbox messages for major market activity and deals involving direct rivals.
 - Better counter-offer reasons and player rejection reasons.
+- Market activity tuned by club ambition, league position, injuries, and fixture congestion.
 
 ### Later Phases
 

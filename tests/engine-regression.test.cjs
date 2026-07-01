@@ -58,6 +58,7 @@ function run() {
   assert.equal(save.league.schedule.length, 38, "Premier League season should have 38 rounds");
   assert.equal(save.league.schedule[0].fixtures.length, 10, "Each round should contain 10 fixtures");
   assert.ok(save.calendar.currentDate, "New saves should include a current calendar date");
+  assert.ok(Array.isArray(save.transfers.news), "New saves should include a transfer news feed");
   assert.ok(save.league.schedule[0].date, "Rounds should have match dates");
   assert.equal(save.league.schedule[0].fixtures[0].date, save.league.schedule[0].date, "Fixtures should inherit round dates");
   const legacySave = Engine.cloneState(save);
@@ -202,6 +203,15 @@ function run() {
   windowSave.calendar.currentDate = "2027-02-01";
   const deadline = Engine.deadlineDayReport(windowSave);
   assert.equal(deadline.active, true, "Final day of a transfer window should activate deadline reporting");
+
+  const aiMarketSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 6262 });
+  aiMarketSave.calendar.currentDate = "2026-07-15";
+  const aiMove = Engine.processAiClubTransfer(aiMarketSave);
+  assert.ok(aiMove, "AI clubs should be able to complete a market move inside an open window");
+  assert.notEqual(aiMove.toClubId, aiMarketSave.activeClubId, "AI market moves should not buy for the user club");
+  assert.notEqual(aiMove.fromClubId, aiMarketSave.activeClubId, "AI market moves should not sell from the user club");
+  assert.ok(aiMarketSave.transfers.history.some((item) => item.playerId === aiMove.playerId), "AI market moves should enter the transfer ledger");
+  assert.ok(aiMarketSave.transfers.news.some((item) => item.playerId === aiMove.playerId), "AI market moves should create transfer news");
 
   const scoutTarget = save.transfers.marketIds.map((id) => Engine.getPlayer(save, id)).find((player) => player && player.clubId && player.clubId !== save.activeClubId);
   const assignment = Engine.assignScout(save, scoutTarget.id);

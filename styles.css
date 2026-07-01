@@ -2399,6 +2399,65 @@ tr.highlight td {
   color: var(--muted-strong);
 }
 
+.transfer-news-panel {
+  margin: 14px 0;
+}
+
+.transfer-news-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.transfer-news-item {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 11px;
+  background: var(--panel-soft);
+}
+
+.transfer-news-item.major {
+  border-color: color-mix(in srgb, var(--green) 28%, var(--line));
+  background: color-mix(in srgb, var(--green-soft) 42%, var(--panel));
+}
+
+.transfer-news-item > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.transfer-news-item small {
+  overflow: hidden;
+  color: var(--muted);
+  text-align: right;
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-news-item strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.25;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-news-item p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .negotiation-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2660,6 +2719,10 @@ tr.highlight td {
   .analysis-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .transfer-news-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 860px) {
@@ -2718,6 +2781,7 @@ tr.highlight td {
   .profile-card-grid,
   .need-grid,
   .window-stats,
+  .transfer-news-grid,
   .negotiation-grid,
   .ratings-grid {
     grid-template-columns: 1fr;
@@ -2844,6 +2908,16 @@ tr.highlight td {
 
   .deadline-strip small {
     margin-left: 0;
+  }
+
+  .transfer-news-item > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .transfer-news-item small {
+    max-width: 100%;
+    text-align: left;
   }
 
   .watch-item .badge {

@@ -841,10 +841,12 @@
     const offers = state.transfers.offers.filter((offer) => offer.status === "pending" && offer.type !== "outgoing");
     const negotiations = state.transfers.offers.filter((offer) => offer.status === "countered" && offer.type === "outgoing");
     const agreements = (state.transfers.preAgreements || []).filter((agreement) => agreement.status === "pending");
+    const news = state.transfers.news || [];
 
     return `
       ${renderTransferWindowPanel(windowStatus, agreements, deadline)}
       ${renderRecruitmentCentre(needReport, recommendations, shortlist)}
+      ${renderTransferNews(news)}
       <div class="grid three">
         <div class="panel">
           <h2 class="panel-title">Incoming Offers</h2>
@@ -893,6 +895,50 @@
         ` : ""}
       </div>
     `;
+  }
+
+  function renderTransferNews(news) {
+    const visible = news.slice(0, 6);
+    return `
+      <div class="panel transfer-news-panel">
+        <div class="ratings-heading">
+          <h2 class="panel-title">Transfer News</h2>
+          <span class="pill ${visible.length ? "blue" : "amber"}">${visible.length ? `${visible.length} latest` : "Quiet market"}</span>
+        </div>
+        ${visible.length ? `
+          <div class="transfer-news-grid">
+            ${visible.map((item) => {
+              const player = item.playerId ? Engine.getPlayer(state, item.playerId) : null;
+              const meta = [
+                item.date ? Engine.formatGameDate(item.date) : "",
+                item.fee ? Engine.formatMoney(item.fee) : item.type === "free-agent" ? "Free" : "",
+                player ? player.position : ""
+              ].filter(Boolean).join(" | ");
+              return `
+                <article class="transfer-news-item ${item.priority === "major" ? "major" : ""}">
+                  <div>
+                    <span class="badge ${item.tone || "blue"}">${transferNewsLabel(item.type)}</span>
+                    <small>${escapeHtml(meta)}</small>
+                  </div>
+                  <strong>${escapeHtml(item.title || "Market update")}</strong>
+                  <p>${escapeHtml(item.body || "")}</p>
+                </article>
+              `;
+            }).join("")}
+          </div>
+        ` : `<div class="empty-state">No market stories yet.</div>`}
+      </div>
+    `;
+  }
+
+  function transferNewsLabel(type) {
+    const labels = {
+      transfer: "Deal",
+      loan: "Loan",
+      "free-agent": "Free Agent",
+      rumor: "Rumor"
+    };
+    return labels[type] || "News";
   }
 
   function renderRecruitmentCentre(needReport, recommendations, shortlist) {
