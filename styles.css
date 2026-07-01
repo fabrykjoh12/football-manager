@@ -680,7 +680,7 @@ input[type="checkbox"] {
 
 table {
   width: 100%;
-  min-width: 1120px;
+  min-width: 1200px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -2379,6 +2379,54 @@ tr.highlight td {
   gap: 10px;
 }
 
+.deadline-strip {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--amber) 28%, var(--line));
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--amber-soft);
+}
+
+.deadline-strip strong {
+  color: var(--ink);
+}
+
+.deadline-strip small {
+  margin-left: auto;
+  color: var(--muted-strong);
+}
+
+.negotiation-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.negotiation-card {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--panel-soft);
+}
+
+.negotiation-card strong {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.negotiation-card small {
+  color: var(--muted-strong);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 .attribute-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2670,6 +2718,7 @@ tr.highlight td {
   .profile-card-grid,
   .need-grid,
   .window-stats,
+  .negotiation-grid,
   .ratings-grid {
     grid-template-columns: 1fr;
   }
@@ -2786,6 +2835,15 @@ tr.highlight td {
 
   .target-card {
     grid-template-columns: 1fr;
+  }
+
+  .deadline-strip {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .deadline-strip small {
+    margin-left: 0;
   }
 
   .watch-item .badge {

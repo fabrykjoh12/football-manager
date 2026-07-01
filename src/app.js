@@ -830,6 +830,7 @@
   function renderTransfers() {
     const club = activeClub();
     const windowStatus = Engine.transferWindowStatus(state);
+    const deadline = Engine.deadlineDayReport(state);
     const needReport = Engine.recruitmentNeedReport(state, club.id);
     const recommendations = Engine.recruitmentRecommendations(state, 8);
     const shortlist = Engine.shortlistPlayers(state);
@@ -842,7 +843,7 @@
     const agreements = (state.transfers.preAgreements || []).filter((agreement) => agreement.status === "pending");
 
     return `
-      ${renderTransferWindowPanel(windowStatus, agreements)}
+      ${renderTransferWindowPanel(windowStatus, agreements, deadline)}
       ${renderRecruitmentCentre(needReport, recommendations, shortlist)}
       <div class="grid three">
         <div class="panel">
@@ -870,7 +871,7 @@
     `;
   }
 
-  function renderTransferWindowPanel(windowStatus, agreements) {
+  function renderTransferWindowPanel(windowStatus, agreements, deadline) {
     const tone = windowStatus.isOpen ? windowStatus.isDeadlineDay ? "amber" : "green" : "blue";
     return `
       <div class="transfer-window-panel">
@@ -883,6 +884,13 @@
           ${metric("Pre-Agreed", agreements.length, "Pending registrations")}
           ${metric("Deadline", windowStatus.isDeadlineDay ? "Yes" : "No", windowStatus.isOpen ? "Window status" : "Next window")}
         </div>
+        ${deadline.active ? `
+          <div class="deadline-strip">
+            <span class="badge amber">Deadline Day</span>
+            <strong>${deadline.pendingOffers} offers | ${deadline.negotiations} negotiations</strong>
+            <small>AI activity is elevated until the window closes.</small>
+          </div>
+        ` : ""}
       </div>
     `;
   }
@@ -1263,7 +1271,7 @@
         <table>
           <thead>
             <tr>
-              <th>Player</th><th>Club</th><th>Pos</th><th>Age</th><th>Rec</th><th>Need</th><th>CA</th><th>PA</th><th>Scout</th><th>Afford</th><th>Value</th><th>Wage</th><th></th>
+              <th>Player</th><th>Club</th><th>Pos</th><th>Age</th><th>Rec</th><th>Need</th><th>CA</th><th>PA</th><th>Scout</th><th>Afford</th><th>Interest</th><th>Value</th><th>Wage</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -1271,6 +1279,7 @@
               const scout = Engine.getScoutView(state, player.id);
               const profile = Engine.recruitmentProfile(state, player.id);
               const recruitment = profile ? profile.recruitment : Engine.recruitmentTargetScore(state, player.id);
+              const negotiation = Engine.negotiationProfile(state, player.id);
               const isFreeAgent = !player.clubId;
               const recTone = recruitment.score >= 78 ? "green" : recruitment.score >= 58 ? "blue" : recruitment.score >= 42 ? "amber" : "red";
               return `
@@ -1285,6 +1294,7 @@
                   <td>${scout.potentialStars}</td>
                   <td>${scout.confidence}%</td>
                   <td><span class="badge ${recruitment.affordability.tone}">${recruitment.affordability.label}</span></td>
+                  <td><span class="badge ${negotiation.interest.tone}">${negotiation.interest.label}</span></td>
                   <td>${isFreeAgent ? "Free" : Engine.formatMoney(player.value)}</td>
                   <td>${Engine.formatMoney(player.wage)}</td>
                   <td>
@@ -2012,9 +2022,10 @@
       const player = Engine.getPlayer(state, ui.modal.playerId);
       if (!player) return "";
       const isFreeAgent = !player.clubId;
-      const windowStatus = Engine.transferWindowStatus(state);
-      const suggestedFee = isFreeAgent ? 0 : ui.modal.fee || Math.round(player.value * 1.05);
-      const suggestedWage = ui.modal.wage || Math.round(player.wage * 1.08);
+      const negotiation = Engine.negotiationProfile(state, player.id);
+      const windowStatus = negotiation.window;
+      const suggestedFee = isFreeAgent ? 0 : ui.modal.fee || negotiation.suggestedFee;
+      const suggestedWage = ui.modal.wage || negotiation.suggestedWage;
       return `
         <div class="modal-backdrop" data-action="close-modal">
           <div class="modal" data-modal>
@@ -2026,6 +2037,12 @@
               <button class="btn-compact" data-action="close-modal">Close</button>
             </div>
             <div class="setup-form">
+              <div class="negotiation-grid">
+                ${negotiationCard("Seller Stance", negotiation.stance.label, negotiation.stance.reason, negotiation.stance.tone)}
+                ${negotiationCard("Player Interest", negotiation.interest.label, negotiation.interest.reason, negotiation.interest.tone)}
+                ${negotiationCard("Suggested Fee", isFreeAgent ? "Free" : Engine.formatMoney(negotiation.suggestedFee), negotiation.affordability.label, negotiation.affordability.tone)}
+                ${negotiationCard("Suggested Wage", Engine.formatMoney(negotiation.suggestedWage), negotiation.registration, windowStatus.isOpen ? "green" : "blue")}
+              </div>
               <div class="field">
                 <label for="offer-fee">Transfer Fee</label>
                 <input id="offer-fee" type="number" min="0" step="25000" value="${suggestedFee}" ${isFreeAgent ? "disabled" : ""}>
@@ -2035,6 +2052,7 @@
                 <input id="offer-wage" type="number" min="0" step="5000" value="${suggestedWage}">
               </div>
               <div class="message">${isFreeAgent ? "No transfer fee required" : `Value ${Engine.formatMoney(player.value)}`} | Current wage ${Engine.formatMoney(player.wage)}</div>
+              ${negotiation.warnings.length ? `<div class="message warn">${negotiation.warnings.map(escapeHtml).join(" | ")}</div>` : ""}
               <div class="message ${windowStatus.isOpen ? "good" : "warn"}">${windowStatus.isOpen ? `Window open: registration can complete before ${Engine.formatGameDate(windowStatus.closesOn)}.` : `Window closed: accepted deals register on ${Engine.formatGameDate(windowStatus.opensOn)}.`}</div>
               <button class="btn-primary" data-action="submit-offer" data-player-id="${player.id}">${isFreeAgent ? "Submit Contract" : windowStatus.isOpen ? "Submit Offer" : "Pre-Agree Offer"}</button>
             </div>
@@ -2821,6 +2839,16 @@
 
   function progressCard(label, value) {
     return `<div class="progress-card"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(String(value))}</span></div>`;
+  }
+
+  function negotiationCard(label, value, detail, tone) {
+    return `
+      <div class="negotiation-card">
+        <strong>${escapeHtml(label)}</strong>
+        <span class="badge ${tone || ""}">${escapeHtml(String(value))}</span>
+        <small>${escapeHtml(detail || "")}</small>
+      </div>
+    `;
   }
 
   function bar(value, tone) {

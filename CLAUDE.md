@@ -132,43 +132,42 @@ Design target:
 - Offer modal explains whether the deal registers immediately or becomes a pre-agreement.
 - Deadline-day AI offer activity is boosted.
 
+### Deadline Day + Negotiations 2.0
+
+- Dedicated deadline-day strip on the Transfers screen when a window has 0-1 days remaining.
+- Deadline panel shows pending offers, active negotiations, and pre-agreements.
+- Negotiation profile for each target:
+  - selling club stance
+  - player interest
+  - suggested transfer fee
+  - suggested wage
+  - affordability and registration warnings
+- Transfer market rows show player interest.
+- Offer modal now explains stance, interest, suggested fee, suggested wage, and window registration outcome.
+- Engine regression tests cover negotiation profile output and deadline-day detection.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
 - `3355836` Add recruitment centre and shortlist
+- `7f60dbd` Add transfer windows and project roadmap
 
-The current uncommitted phase before this document was Transfer Windows + Pre-Agreements.
+The current uncommitted phase before this document update was Deadline Day + Negotiations 2.0.
 
 ## Current Roadmap
 
-### Next Phase: Deadline Day + Negotiations 2.0
+### Next Phase: AI Club Movement + Transfer News
 
 Planned work:
 
-- Dedicated deadline-day panel when a window has 0-1 days remaining.
-- More AI market activity on deadline day.
-- Negotiation profile for each target:
-  - selling club stance
-  - asking price
-  - player interest
-  - estimated wage demand
-  - reasons for counter-offers
-- Better offer modal:
-  - suggested fee
-  - suggested wage
-  - seller stance
-  - player interest
-  - affordability warnings
-  - window registration note
-- More realistic counter-offers:
-  - selling club may reject outright
-  - player can reject due to reputation, wage, role, or club quality
-  - stronger counter reasons
+- AI clubs can buy, sell, loan, and release players without user involvement.
+- AI clubs use squad depth, age profile, finances, and league position to decide needs.
+- Transfer news feed with rumors, bids, completed deals, failed moves, and deadline-day stories.
+- Inbox messages for major market activity and deals involving direct rivals.
+- Better counter-offer reasons and player rejection reasons.
 
 ### Later Phases
 
-- AI club transfers between non-user clubs.
-- Transfer rumors and news feed.
 - Contract expiry market opportunities.
 - Player morale and playing-time promises.
 - Youth academy and intake.
@@ -188,4 +187,3 @@ Planned work:
 - Do not add frontend dependencies unless the project is intentionally migrated from static JS to a bundler/framework.
 - Use `apply_patch` for manual edits.
 - Avoid unrelated refactors when adding features.
-

@@ -2886,6 +2886,91 @@
     return { player, recruitment, scout, pros, cons, shortlisted: isShortlisted(state, player.id) };
   }
 
+  function sellerStance(state, player) {
+    if (!player || !player.clubId) {
+      return { key: "free", label: "Free Agent", tone: "blue", askingMultiplier: 0, reason: "No selling club" };
+    }
+    const seller = getClub(state, player.clubId);
+    if (!seller) return { key: "unknown", label: "Unknown", tone: "amber", askingMultiplier: 1.1, reason: "Seller unknown" };
+    const squad = clubPlayers(state, seller.id);
+    const roleRank = squad.slice().sort((a, b) => b.currentAbility - a.currentAbility).findIndex((item) => item.id === player.id);
+    const keyPlayer = roleRank >= 0 && roleRank < 5;
+    const expiring = player.contractYears <= 1;
+    const unhappy = player.morale < 42;
+    const veteran = player.age >= 31;
+    let score = 48 + (keyPlayer ? 25 : 0) + (player.currentAbility - seller.reputation) * 0.65 - (expiring ? 22 : 0) - (unhappy ? 14 : 0) - (veteran ? 7 : 0);
+    score = clamp(score, 0, 100);
+    if (score >= 78) return { key: "notForSale", label: "Not For Sale", tone: "red", askingMultiplier: 1.75, reason: "Key player for selling club" };
+    if (score >= 58) return { key: "expensive", label: "Hard Sell", tone: "amber", askingMultiplier: 1.36, reason: "Seller wants a premium" };
+    if (score >= 34) return { key: "negotiable", label: "Negotiable", tone: "blue", askingMultiplier: expiring ? 0.92 : 1.12, reason: expiring ? "Contract leverage" : "Open to a fair offer" };
+    return { key: "available", label: "Available", tone: "green", askingMultiplier: expiring || unhappy ? 0.82 : 0.96, reason: unhappy ? "Player could move" : "Seller open to sale" };
+  }
+
+  function playerInterest(state, player) {
+    const activeClub = getClub(state, state.activeClubId);
+    const currentClub = player && player.clubId ? getClub(state, player.clubId) : null;
+    if (!player || !activeClub) return { key: "unknown", label: "Unknown", tone: "amber", score: 0, wageMultiplier: 1.15, reason: "Unknown" };
+    const reputationLift = activeClub.reputation - (currentClub ? currentClub.reputation : activeClub.reputation - 6);
+    const wageRoom = Math.max(0, activeClub.wageBudget - weeklyWageSpend(state, activeClub.id));
+    const wageRoomLift = wageRoom > player.wage * 1.4 ? 10 : wageRoom > player.wage ? 4 : -14;
+    const playingTimeLift = player.currentAbility >= teamStrength(state, activeClub.id).overall - 2 ? 10 : player.age <= 22 ? 5 : -4;
+    const moraleLift = player.morale < 42 ? 10 : player.morale > 76 && currentClub ? -6 : 0;
+    const contractLift = player.contractYears <= 1 ? 9 : 0;
+    const score = round(clamp(52 + reputationLift * 1.15 + wageRoomLift + playingTimeLift + moraleLift + contractLift, 0, 100), 0);
+    if (score >= 78) return { key: "veryInterested", label: "Very Interested", tone: "green", score, wageMultiplier: 1.02, reason: "Move is appealing" };
+    if (score >= 58) return { key: "interested", label: "Interested", tone: "blue", score, wageMultiplier: 1.1, reason: "Likely to listen" };
+    if (score >= 38) return { key: "unsure", label: "Unsure", tone: "amber", score, wageMultiplier: 1.24, reason: "Needs convincing" };
+    return { key: "reluctant", label: "Reluctant", tone: "red", score, wageMultiplier: 1.45, reason: "Club or role concerns" };
+  }
+
+  function negotiationProfile(state, playerId) {
+    const player = getPlayer(state, playerId);
+    const activeClub = getClub(state, state.activeClubId);
+    if (!player || !activeClub) return null;
+    const stance = sellerStance(state, player);
+    const interest = playerInterest(state, player);
+    const window = transferWindowStatus(state);
+    const affordability = transferAffordability(state, player);
+    const suggestedFee = player.clubId ? moneyRound(Math.max(player.value * stance.askingMultiplier, player.value * 0.75)) : 0;
+    const suggestedWage = moneyRound(Math.max(player.wage * interest.wageMultiplier, player.currentAbility * 900));
+    const warnings = [];
+    if (suggestedFee > activeClub.transferBudget) warnings.push("Transfer budget stretch");
+    if (weeklyWageSpend(state, activeClub.id) + suggestedWage > activeClub.wageBudget) warnings.push("Wage budget stretch");
+    if (stance.key === "notForSale") warnings.push("Seller may reject below premium");
+    if (interest.key === "reluctant") warnings.push("Player needs convincing");
+    if (!window.isOpen) warnings.push(`Registers on ${formatGameDate(window.opensOn)}`);
+    return {
+      playerId: player.id,
+      stance,
+      interest,
+      affordability,
+      suggestedFee,
+      suggestedWage,
+      window,
+      registration: window.isOpen ? "Immediate" : "Pre-Agreement",
+      warnings
+    };
+  }
+
+  function deadlineDayReport(state) {
+    const window = transferWindowStatus(state);
+    const transfers = ensureTransferState(state);
+    const active = window.isOpen && window.daysRemaining <= 1;
+    const pendingOffers = transfers.offers.filter((offer) => offer.status === "pending").length;
+    const negotiations = transfers.offers.filter((offer) => offer.status === "countered").length;
+    const preAgreements = transfers.preAgreements.filter((agreement) => agreement.status === "pending").length;
+    return {
+      active,
+      label: active ? "Deadline Day" : window.isOpen ? "Window Open" : "Window Closed",
+      tone: active ? "amber" : window.isOpen ? "green" : "blue",
+      window,
+      pendingOffers,
+      negotiations,
+      preAgreements,
+      activity: active ? "High" : window.isOpen ? "Normal" : "Planning"
+    };
+  }
+
   function queuePreAgreement(state, agreement) {
     const transfers = ensureTransferState(state);
     const player = getPlayer(state, agreement.playerId);
@@ -3634,6 +3719,8 @@
     recruitmentRecommendations,
     recruitmentTargetScore,
     recruitmentProfile,
+    negotiationProfile,
+    deadlineDayReport,
     shortlistPlayers,
     isShortlisted,
     addToShortlist,

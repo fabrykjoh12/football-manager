@@ -189,6 +189,9 @@ function run() {
   windowClub.wageBudget = 20000000;
   windowSave.calendar.currentDate = "2026-09-10";
   assert.equal(Engine.transferWindowStatus(windowSave).isOpen, false, "September should be outside the transfer window");
+  const negotiationProfile = Engine.negotiationProfile(windowSave, windowTarget.id);
+  assert.ok(negotiationProfile.suggestedFee >= windowTarget.value * 0.7, "Negotiation profile should suggest a plausible fee");
+  assert.ok(negotiationProfile.interest.label, "Negotiation profile should include player interest");
   const preAgreement = Engine.makeTransferOffer(windowSave, windowTarget.id, windowTarget.value * 2, windowTarget.wage * 2);
   assert.equal(preAgreement.preAgreement, true, "Accepted outside-window deals should become pre-agreements");
   assert.notEqual(Engine.getPlayer(windowSave, windowTarget.id).clubId, windowSave.activeClubId, "Pre-agreements should not register immediately");
@@ -196,6 +199,9 @@ function run() {
   const processedAgreements = Engine.processTransferPreAgreements(windowSave);
   assert.ok(processedAgreements.length > 0, "Opening the next window should process pre-agreements");
   assert.equal(Engine.getPlayer(windowSave, windowTarget.id).clubId, windowSave.activeClubId, "Pre-agreements should register when the window opens");
+  windowSave.calendar.currentDate = "2027-02-01";
+  const deadline = Engine.deadlineDayReport(windowSave);
+  assert.equal(deadline.active, true, "Final day of a transfer window should activate deadline reporting");
 
   const scoutTarget = save.transfers.marketIds.map((id) => Engine.getPlayer(save, id)).find((player) => player && player.clubId && player.clubId !== save.activeClubId);
   const assignment = Engine.assignScout(save, scoutTarget.id);
