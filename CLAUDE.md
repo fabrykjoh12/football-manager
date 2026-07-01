@@ -200,6 +200,7 @@ Design target:
 - `8b9be63` Add AI transfer activity and market news
 - `4137c9d` Expand AI loan market and transfer news
 - `686b64e` Improve calendar flow and player profiles
+- `ede7f0a` Add contracts and morale systems
 
 The latest completed feature phase is Contracts + Morale.
 
