@@ -680,7 +680,7 @@ input[type="checkbox"] {
 
 table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1120px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -2266,6 +2266,86 @@ tr.highlight td {
   color: var(--ink);
 }
 
+.recruitment-layout {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1fr;
+  gap: 14px;
+  margin: 14px 0;
+}
+
+.need-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.need-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--panel-soft);
+}
+
+.need-card > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.need-card small,
+.need-card em {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.need-card em {
+  font-style: normal;
+}
+
+.target-stack {
+  display: grid;
+  gap: 9px;
+}
+
+.target-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 10px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--panel-soft);
+}
+
+.target-card > span,
+.target-card > small {
+  min-width: 0;
+}
+
+.target-card strong,
+.target-card small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-card small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.target-card > .table-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+}
+
 .attribute-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2475,6 +2555,7 @@ tr.highlight td {
   .tactics-layout,
   .training-layout,
   .squad-insights,
+  .recruitment-layout,
   .setup-layout,
   .player-detail {
     grid-template-columns: 1fr;
@@ -2553,6 +2634,7 @@ tr.highlight td {
   .training-controls,
   .player-management-grid,
   .profile-card-grid,
+  .need-grid,
   .ratings-grid {
     grid-template-columns: 1fr;
   }
@@ -2664,6 +2746,10 @@ tr.highlight td {
   }
 
   .watch-item {
+    grid-template-columns: 1fr;
+  }
+
+  .target-card {
     grid-template-columns: 1fr;
   }
 

@@ -2641,6 +2641,194 @@
     };
   }
 
+  function ensureTransferState(state) {
+    state.transfers = state.transfers || {};
+    state.transfers.marketIds = state.transfers.marketIds || [];
+    state.transfers.offers = state.transfers.offers || [];
+    state.transfers.shortlist = state.transfers.shortlist || [];
+    state.transfers.history = state.transfers.history || [];
+    state.transfers.freeAgentIds = state.transfers.freeAgentIds || [];
+    return state.transfers;
+  }
+
+  function desiredDepth(position) {
+    const depths = {
+      GK: 2,
+      RB: 2,
+      CB: 4,
+      LB: 2,
+      DM: 2,
+      CM: 3,
+      AM: 2,
+      RW: 2,
+      LW: 2,
+      ST: 2
+    };
+    return depths[position] || 2;
+  }
+
+  function recruitmentNeedReport(state, clubId) {
+    const club = getClub(state, clubId || state.activeClubId);
+    if (!club) return { needs: [], primary: null };
+    const squad = clubPlayers(state, club.id);
+    const benchmark = clamp((club.reputation || 65) - 1, 54, 86);
+    const needs = Data.POSITIONS.map((position) => {
+      const exact = squad.filter((player) => player.position === position);
+      const cover = squad.filter((player) => player.position === position || (player.secondaryPositions || []).includes(position));
+      const available = cover.filter((player) => !isUnavailable(state, player) && player.fitness >= 55);
+      const scores = cover.map((player) => playerPositionScore(player, position) - slotPenalty(player, position));
+      const bestScore = scores.length ? Math.max(...scores) : 0;
+      const avgScore = scores.length ? average(scores) : 0;
+      const avgAge = cover.length ? average(cover.map((player) => player.age)) : 0;
+      const expiring = cover.filter((player) => player.contractYears <= 1).length;
+      const injured = cover.filter((player) => isInjured(state, player)).length;
+      const suspended = cover.filter((player) => isSuspended(state, player)).length;
+      const depthGap = Math.max(0, desiredDepth(position) - cover.length);
+      const availabilityGap = Math.max(0, Math.min(desiredDepth(position), 2) - available.length);
+      const qualityGap = Math.max(0, benchmark - bestScore);
+      const agePressure = avgAge >= 30 ? (avgAge - 29) * 5 : 0;
+      const score = round(clamp(depthGap * 26 + availabilityGap * 18 + qualityGap * 1.35 + expiring * 6 + injured * 9 + suspended * 5 + agePressure, 0, 100), 0);
+      const status = score >= 70 ? "Critical" : score >= 46 ? "Priority" : score >= 24 ? "Monitor" : "Covered";
+      const tone = score >= 70 ? "red" : score >= 46 ? "amber" : score >= 24 ? "blue" : "green";
+      const reasons = [];
+      if (depthGap) reasons.push(`${depthGap} depth gap`);
+      if (availabilityGap) reasons.push(`${availabilityGap} availability gap`);
+      if (qualityGap > 0) reasons.push(`${round(qualityGap, 1)} quality gap`);
+      if (expiring) reasons.push(`${expiring} expiring`);
+      if (injured) reasons.push(`${injured} injured`);
+      if (!reasons.length) reasons.push("Healthy coverage");
+      return {
+        position,
+        score,
+        status,
+        tone,
+        depth: cover.length,
+        naturalDepth: exact.length,
+        available: available.length,
+        desiredDepth: desiredDepth(position),
+        bestScore: round(bestScore, 1),
+        averageScore: round(avgScore, 1),
+        averageAge: round(avgAge, 1),
+        expiring,
+        injured,
+        reasons
+      };
+    }).sort((a, b) => b.score - a.score || a.position.localeCompare(b.position));
+    return { needs, primary: needs[0] || null };
+  }
+
+  function transferAffordability(state, player) {
+    const activeClub = getClub(state, state.activeClubId);
+    if (!activeClub || !player) return { label: "-", tone: "amber", score: 0, fee: 0, wageRoom: 0 };
+    const fee = player.clubId ? player.value : 0;
+    const wageRoom = Math.max(0, activeClub.wageBudget - weeklyWageSpend(state, activeClub.id));
+    const feeRatio = fee / Math.max(1, activeClub.transferBudget);
+    const wageRatio = player.wage / Math.max(1, wageRoom);
+    const feeScore = fee === 0 ? 100 : clamp(110 - feeRatio * 92, 0, 100);
+    const wageScore = clamp(110 - wageRatio * 82, 0, 100);
+    const score = round(clamp(feeScore * 0.62 + wageScore * 0.38, 0, 100), 0);
+    const label = fee > activeClub.transferBudget || player.wage > wageRoom ? "Stretch" : score >= 72 ? "Affordable" : score >= 46 ? "Manageable" : "Expensive";
+    const tone = label === "Affordable" ? "green" : label === "Manageable" ? "blue" : label === "Expensive" ? "amber" : "red";
+    return { label, tone, score, fee, wageRoom };
+  }
+
+  function targetNeedFit(needs, player) {
+    const positions = [player.position].concat(player.secondaryPositions || []);
+    const ranked = needs.filter((need) => positions.includes(need.position));
+    return ranked.sort((a, b) => b.score - a.score)[0] || needs[0] || null;
+  }
+
+  function recruitmentTargetScore(state, playerId) {
+    const player = getPlayer(state, playerId);
+    const activeClub = getClub(state, state.activeClubId);
+    if (!player || !activeClub) return null;
+    const needReport = recruitmentNeedReport(state, activeClub.id);
+    const need = targetNeedFit(needReport.needs, player);
+    const scout = getScoutView(state, player.id);
+    const affordability = transferAffordability(state, player);
+    const growthRoom = Math.max(0, (player.potential || player.currentAbility) - player.currentAbility);
+    const ageFit = player.age <= 21 ? 12 : player.age <= 24 ? 10 : player.age <= 28 ? 7 : player.age <= 31 ? 2 : -7;
+    const abilityFit = clamp((player.currentAbility - Math.max(54, activeClub.reputation - 12)) * 1.15, -14, 28);
+    const upsideFit = clamp(growthRoom * 1.15, 0, 22);
+    const needFit = need ? need.score * 0.32 : 0;
+    const scoutFit = scout ? clamp(scout.confidence / 100 * 8, 0, 8) : 0;
+    const riskPenalty = injuryRiskLevel(state, player).score >= 58 ? 9 : 0;
+    const score = round(clamp(28 + needFit + abilityFit + upsideFit + ageFit + affordability.score * 0.15 + scoutFit - riskPenalty, 0, 100), 0);
+    const priority = score >= 82 ? "A" : score >= 68 ? "B" : score >= 52 ? "C" : "Watch";
+    return {
+      playerId: player.id,
+      score,
+      priority,
+      need,
+      affordability,
+      scoutConfidence: scout ? scout.confidence : 0,
+      growthRoom,
+      ageFit,
+      risk: injuryRiskLevel(state, player)
+    };
+  }
+
+  function recruitmentRecommendations(state, limit) {
+    ensureTransferState(state);
+    const activeClub = getClub(state, state.activeClubId);
+    if (!activeClub) return [];
+    const activeIds = new Set(activeClub.squad || []);
+    const candidateIds = Array.from(new Set((state.transfers.marketIds || []).concat(state.transfers.freeAgentIds || [], state.transfers.shortlist || [])));
+    return candidateIds
+      .map((id) => getPlayer(state, id))
+      .filter((player) => player && !activeIds.has(player.id) && !player.loanUntilSeason)
+      .map((player) => ({ player, recruitment: recruitmentTargetScore(state, player.id), scout: getScoutView(state, player.id) }))
+      .filter((item) => item.recruitment)
+      .sort((a, b) => b.recruitment.score - a.recruitment.score || b.player.potential - a.player.potential)
+      .slice(0, limit || 10);
+  }
+
+  function shortlistPlayers(state) {
+    ensureTransferState(state);
+    return state.transfers.shortlist.map((id) => getPlayer(state, id)).filter(Boolean);
+  }
+
+  function isShortlisted(state, playerId) {
+    ensureTransferState(state);
+    return state.transfers.shortlist.includes(playerId);
+  }
+
+  function addToShortlist(state, playerId) {
+    ensureTransferState(state);
+    const player = getPlayer(state, playerId);
+    if (!player || player.clubId === state.activeClubId) return { ok: false, message: "Player cannot be shortlisted." };
+    if (!state.transfers.shortlist.includes(playerId)) state.transfers.shortlist.unshift(playerId);
+    state.transfers.shortlist = state.transfers.shortlist.slice(0, 40);
+    return { ok: true, message: `${player.name} added to the shortlist.` };
+  }
+
+  function removeFromShortlist(state, playerId) {
+    ensureTransferState(state);
+    const player = getPlayer(state, playerId);
+    state.transfers.shortlist = state.transfers.shortlist.filter((id) => id !== playerId);
+    return { ok: true, message: `${player ? player.name : "Player"} removed from the shortlist.` };
+  }
+
+  function recruitmentProfile(state, playerId) {
+    const player = getPlayer(state, playerId);
+    if (!player) return null;
+    const recruitment = recruitmentTargetScore(state, player.id);
+    const scout = getScoutView(state, player.id);
+    const pros = [];
+    const cons = [];
+    if (recruitment.need && recruitment.need.score >= 46) pros.push(`Fills ${recruitment.need.position} priority`);
+    if (recruitment.growthRoom >= 10) pros.push("High upside");
+    if (recruitment.affordability.score >= 70) pros.push("Financially realistic");
+    if (player.currentAbility >= 76) pros.push("Immediate first-team level");
+    if (scout && scout.confidence < 45) cons.push("Low scouting confidence");
+    if (recruitment.affordability.score < 42) cons.push("Budget stretch");
+    if (recruitment.risk.key === "high") cons.push("High injury risk");
+    if (player.age >= 32) cons.push("Limited resale value");
+    if (!pros.length) pros.push("Useful market option");
+    if (!cons.length) cons.push("No major red flags");
+    return { player, recruitment, scout, pros, cons, shortlisted: isShortlisted(state, player.id) };
+  }
+
   function setTrainingFocus(state, playerId, focus) {
     const player = getPlayer(state, playerId);
     if (!player || !TRAINING_FOCUS[focus]) return { ok: false, message: "Training focus unavailable." };
@@ -2718,6 +2906,7 @@
   }
 
   function refreshTransferMarket(state) {
+    ensureTransferState(state);
     const activeClub = getClub(state, state.activeClubId);
     const activeIds = new Set(activeClub ? activeClub.squad : []);
     const pool = Object.values(state.players)
@@ -3128,9 +3317,7 @@
     state.version = VERSION;
     state.calendar = { ...createSeasonCalendar(state.season || 1), ...(state.calendar || {}) };
     state.league.records = state.league.records || {};
-    state.transfers.offers = state.transfers.offers || [];
-    state.transfers.history = state.transfers.history || [];
-    state.transfers.freeAgentIds = state.transfers.freeAgentIds || [];
+    ensureTransferState(state);
     state.scouting.reports = state.scouting.reports || {};
     state.scouting.assignments = state.scouting.assignments || [];
     state.scouting.nextAssignmentId = state.scouting.nextAssignmentId || state.scouting.assignments.length + 1;
@@ -3209,6 +3396,14 @@
     playerDevelopmentReport,
     squadAvailabilityReport,
     squadDevelopmentReport,
+    recruitmentNeedReport,
+    recruitmentRecommendations,
+    recruitmentTargetScore,
+    recruitmentProfile,
+    shortlistPlayers,
+    isShortlisted,
+    addToShortlist,
+    removeFromShortlist,
     simulateNextDay,
     simulateNextRound,
     simulateFixture,

@@ -130,6 +130,17 @@ function run() {
   assert.ok(Engine.playerDevelopmentReport(save, trainingPlayer.id).growthRoom >= 0, "Player development reports should include growth room");
   assert.ok(Engine.squadAvailabilityReport(save, activeClub.id).injured >= 1, "Squad availability reports should count injuries");
   assert.ok(Array.isArray(Engine.squadDevelopmentReport(save, activeClub.id).prospects), "Squad development reports should include prospects");
+  const needs = Engine.recruitmentNeedReport(save, activeClub.id);
+  assert.equal(needs.needs.length, Data.POSITIONS.length, "Recruitment should report every position need");
+  assert.ok(needs.primary && needs.primary.position, "Recruitment should identify a primary need");
+  const recommendations = Engine.recruitmentRecommendations(save, 5);
+  assert.ok(recommendations.length > 0, "Recruitment should recommend market targets");
+  assert.ok(recommendations[0].recruitment.score >= recommendations[recommendations.length - 1].recruitment.score, "Recommendations should be score sorted");
+  const shortlist = Engine.addToShortlist(save, recommendations[0].player.id);
+  assert.equal(shortlist.ok, true, "Targets should be shortlistable");
+  assert.equal(Engine.isShortlisted(save, recommendations[0].player.id), true, "Shortlist status should persist");
+  assert.ok(Engine.recruitmentProfile(save, recommendations[0].player.id).pros.length > 0, "Recruitment profile should include pros");
+  assert.equal(Engine.removeFromShortlist(save, recommendations[0].player.id).ok, true, "Targets should be removable from shortlist");
 
   const dailySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 7777 });
   const dailyClub = Engine.getClub(dailySave, dailySave.activeClubId);

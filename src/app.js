@@ -19,7 +19,8 @@
     squadDir: "desc",
     marketSearch: "",
     marketPosition: "all",
-    marketSort: "value",
+    marketView: "all",
+    marketSort: "recruitmentScore",
     marketDir: "desc",
     selectedPlayerId: null,
     lineupSelection: new Set(),
@@ -828,13 +829,18 @@
 
   function renderTransfers() {
     const club = activeClub();
-    let players = state.transfers.marketIds.map((id) => Engine.getPlayer(state, id)).filter(Boolean);
+    const needReport = Engine.recruitmentNeedReport(state, club.id);
+    const recommendations = Engine.recruitmentRecommendations(state, 8);
+    const shortlist = Engine.shortlistPlayers(state);
+    let players = marketPlayers();
     players = filterPlayers(players, ui.marketSearch, ui.marketPosition);
+    players = filterMarketView(players, ui.marketView);
     players = sortPlayers(players, ui.marketSort, ui.marketDir);
     const offers = state.transfers.offers.filter((offer) => offer.status === "pending" && offer.type !== "outgoing");
     const negotiations = state.transfers.offers.filter((offer) => offer.status === "countered" && offer.type === "outgoing");
 
     return `
+      ${renderRecruitmentCentre(needReport, recommendations, shortlist)}
       <div class="grid two">
         <div class="panel">
           <h2 class="panel-title">Incoming Offers</h2>
@@ -853,6 +859,98 @@
       <div class="panel" style="margin-top:14px">
         <h2 class="panel-title">Transfer Ledger</h2>
         ${renderTransferHistory(state.transfers.history || [])}
+      </div>
+    `;
+  }
+
+  function renderRecruitmentCentre(needReport, recommendations, shortlist) {
+    const primary = needReport.primary;
+    const topTarget = recommendations[0];
+    const affordable = recommendations.filter((item) => item.recruitment.affordability.score >= 58).length;
+    return `
+      <div class="grid four">
+        ${metric("Top Need", primary ? primary.position : "-", primary ? `${primary.status} | ${primary.reasons[0]}` : "Squad covered")}
+        ${metric("Shortlist", shortlist.length, "Tracked targets")}
+        ${metric("Top Target", topTarget ? topTarget.recruitment.score : "-", topTarget ? topTarget.player.name : "No targets")}
+        ${metric("Affordable Fits", affordable, "Recommended targets")}
+      </div>
+      <div class="recruitment-layout">
+        <div class="panel">
+          <div class="ratings-heading">
+            <h2 class="panel-title">Squad Needs</h2>
+            <span class="pill ${primary ? primary.tone : "green"}">${primary ? primary.status : "Covered"}</span>
+          </div>
+          <div class="need-grid">
+            ${needReport.needs.slice(0, 6).map(renderNeedCard).join("")}
+          </div>
+        </div>
+        <div class="panel">
+          <div class="ratings-heading">
+            <h2 class="panel-title">Recruitment Fits</h2>
+            <span class="pill blue">${recommendations.length} targets</span>
+          </div>
+          ${recommendations.length ? `<div class="target-stack">${recommendations.slice(0, 5).map((item) => renderTargetCard(item)).join("")}</div>` : `<div class="empty-state">Refresh the market or scout players to build recommendations.</div>`}
+        </div>
+        <div class="panel">
+          <div class="ratings-heading">
+            <h2 class="panel-title">Shortlist</h2>
+            <span class="pill ${shortlist.length ? "green" : "amber"}">${shortlist.length}/40</span>
+          </div>
+          ${shortlist.length ? `<div class="target-stack">${shortlist.slice(0, 5).map((player) => renderShortlistCard(player)).join("")}</div>` : `<div class="empty-state">Shortlisted players will stay here even when the market refreshes.</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderNeedCard(need) {
+    return `
+      <div class="need-card">
+        <div>
+          <strong>${positionBadge(need.position)}</strong>
+          <span class="badge ${need.tone}">${need.status}</span>
+        </div>
+        ${bar(need.score, need.score >= 70 ? "red" : need.score >= 46 ? "amber" : need.score >= 24 ? "blue" : "green")}
+        <small>${need.available}/${need.desiredDepth} available | best ${need.bestScore}</small>
+        <em>${escapeHtml(need.reasons.slice(0, 2).join(" | "))}</em>
+      </div>
+    `;
+  }
+
+  function renderTargetCard(item) {
+    const profile = Engine.recruitmentProfile(state, item.player.id);
+    return `
+      <div class="target-card">
+        <span>
+          <strong>${escapeHtml(item.player.name)}</strong>
+          <small>${positionBadge(item.player.position)} ${escapeHtml(clubName(item.player.clubId))} | ${item.player.age} yrs</small>
+        </span>
+        <em class="badge ${item.recruitment.score >= 75 ? "green" : item.recruitment.score >= 55 ? "blue" : "amber"}">${item.recruitment.score}</em>
+        <small>${profile.pros[0]} | ${item.recruitment.affordability.label}</small>
+        <div class="table-actions">
+          <button class="btn-compact" data-action="scout-player" data-player-id="${item.player.id}">Scout</button>
+          <button class="btn-compact" data-action="shortlist-player" data-player-id="${item.player.id}">${Engine.isShortlisted(state, item.player.id) ? "Listed" : "Shortlist"}</button>
+          <button class="btn-compact" data-action="open-offer" data-player-id="${item.player.id}">${item.player.clubId ? "Offer" : "Sign"}</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderShortlistCard(player) {
+    const profile = Engine.recruitmentProfile(state, player.id);
+    const score = profile && profile.recruitment ? profile.recruitment.score : 0;
+    return `
+      <div class="target-card">
+        <span>
+          <strong>${escapeHtml(player.name)}</strong>
+          <small>${positionBadge(player.position)} ${escapeHtml(clubName(player.clubId))} | ${Engine.getScoutView(state, player.id).confidence}% scouted</small>
+        </span>
+        <em class="badge ${score >= 75 ? "green" : score >= 55 ? "blue" : "amber"}">${score}</em>
+        <small>${profile ? profile.pros[0] : "Shortlisted"} | ${profile ? profile.recruitment.affordability.label : ""}</small>
+        <div class="table-actions">
+          <button class="btn-compact" data-action="assign-scout" data-player-id="${player.id}">Assign</button>
+          <button class="btn-compact" data-action="remove-shortlist" data-player-id="${player.id}">Remove</button>
+          <button class="btn-compact" data-action="open-offer" data-player-id="${player.id}">${player.clubId ? "Offer" : "Sign"}</button>
+        </div>
       </div>
     `;
   }
@@ -895,11 +993,7 @@
       .map((report) => ({ report, player: Engine.getPlayer(state, report.playerId) }))
       .filter((item) => item.player)
       .sort((a, b) => b.report.confidence - a.report.confidence);
-    const recommendations = state.transfers.marketIds
-      .map((id) => Engine.getPlayer(state, id))
-      .filter(Boolean)
-      .sort((a, b) => b.potential - b.currentAbility - (a.potential - a.currentAbility))
-      .slice(0, 10);
+    const recommendations = Engine.recruitmentRecommendations(state, 10).map((item) => item.player);
 
     return `
       <div class="grid three">
@@ -1039,8 +1133,22 @@
             ].map(([value, label]) => `<option value="${value}" ${ui.squadAvailability === value ? "selected" : ""}>${label}</option>`).join("")}
           </select>
         ` : ""}
+        ${scope === "market" ? `
+          <select data-ui="marketView">
+            ${[
+              ["all", "All targets"],
+              ["recommended", "Recommended"],
+              ["shortlist", "Shortlist"],
+              ["affordable", "Affordable"],
+              ["freeAgents", "Free agents"],
+              ["prospects", "Prospects"],
+              ["scouted", "Scouted"]
+            ].map(([value, label]) => `<option value="${value}" ${ui.marketView === value ? "selected" : ""}>${label}</option>`).join("")}
+          </select>
+        ` : ""}
         <select data-ui="${scope}Sort">
           ${[
+            ...(scope === "market" ? [["recruitmentScore", "Recruitment Score"], ["confidence", "Scout Confidence"]] : []),
             ["currentAbility", "Current Ability"],
             ["potential", "Potential"],
             ...(scope === "squad" ? [["fitness", "Fitness"], ["sharpness", "Sharpness"], ["morale", "Morale"]] : []),
@@ -1131,28 +1239,35 @@
         <table>
           <thead>
             <tr>
-              <th>Player</th><th>Club</th><th>Pos</th><th>Age</th><th>CA</th><th>PA</th><th>Confidence</th><th>Value</th><th>Wage</th><th></th>
+              <th>Player</th><th>Club</th><th>Pos</th><th>Age</th><th>Rec</th><th>Need</th><th>CA</th><th>PA</th><th>Scout</th><th>Afford</th><th>Value</th><th>Wage</th><th></th>
             </tr>
           </thead>
           <tbody>
             ${players.map((player) => {
               const scout = Engine.getScoutView(state, player.id);
+              const profile = Engine.recruitmentProfile(state, player.id);
+              const recruitment = profile ? profile.recruitment : Engine.recruitmentTargetScore(state, player.id);
               const isFreeAgent = !player.clubId;
+              const recTone = recruitment.score >= 78 ? "green" : recruitment.score >= 58 ? "blue" : recruitment.score >= 42 ? "amber" : "red";
               return `
                 <tr>
                   <td><span class="player-name">${escapeHtml(player.name)}</span></td>
                   <td>${isFreeAgent ? `<span class="badge blue">Free Agent</span>` : escapeHtml(clubName(player.clubId))}</td>
                   <td>${positionBadge(player.position)}</td>
                   <td>${player.age}</td>
+                  <td><span class="badge ${recTone}">${recruitment.score} | ${escapeHtml(recruitment.priority)}</span></td>
+                  <td>${recruitment.need ? `<span class="badge ${recruitment.need.tone}">${recruitment.need.position}</span>` : "-"}</td>
                   <td>${scout.currentStars}</td>
                   <td>${scout.potentialStars}</td>
                   <td>${scout.confidence}%</td>
+                  <td><span class="badge ${recruitment.affordability.tone}">${recruitment.affordability.label}</span></td>
                   <td>${isFreeAgent ? "Free" : Engine.formatMoney(player.value)}</td>
                   <td>${Engine.formatMoney(player.wage)}</td>
                   <td>
                     <div class="table-actions">
                       <button class="btn-compact" data-action="scout-player" data-player-id="${player.id}">Scout</button>
                       <button class="btn-compact" data-action="assign-scout" data-player-id="${player.id}">Assign</button>
+                      <button class="btn-compact" data-action="${Engine.isShortlisted(state, player.id) ? "remove-shortlist" : "shortlist-player"}" data-player-id="${player.id}">${Engine.isShortlisted(state, player.id) ? "Unlist" : "Shortlist"}</button>
                       <button class="btn-compact" data-action="open-offer" data-player-id="${player.id}">${isFreeAgent ? "Sign" : "Offer"}</button>
                       ${isFreeAgent ? "" : `<button class="btn-compact" data-action="loan-player" data-player-id="${player.id}">Loan</button>`}
                     </div>
@@ -1752,23 +1867,29 @@
     return `
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Player</th><th>Club</th><th>Pos</th><th>Age</th><th>Potential Gap</th><th></th></tr></thead>
+          <thead><tr><th>Player</th><th>Club</th><th>Pos</th><th>Age</th><th>Rec</th><th>Need</th><th>Afford</th><th></th></tr></thead>
           <tbody>
-            ${players.map((player) => `
-              <tr>
-                <td>${escapeHtml(player.name)}</td>
-                <td>${escapeHtml(clubName(player.clubId))}</td>
-                <td>${positionBadge(player.position)}</td>
-                <td>${player.age}</td>
-                <td>${player.potential - player.currentAbility}</td>
-                <td>
-                  <div class="table-actions">
-                    <button class="btn-compact" data-action="scout-player" data-player-id="${player.id}">Scout</button>
-                    <button class="btn-compact" data-action="assign-scout" data-player-id="${player.id}">Assign</button>
-                  </div>
-                </td>
-              </tr>
-            `).join("")}
+            ${players.map((player) => {
+              const recruitment = Engine.recruitmentTargetScore(state, player.id);
+              return `
+                <tr>
+                  <td>${escapeHtml(player.name)}</td>
+                  <td>${escapeHtml(clubName(player.clubId))}</td>
+                  <td>${positionBadge(player.position)}</td>
+                  <td>${player.age}</td>
+                  <td><span class="badge ${recruitment.score >= 75 ? "green" : recruitment.score >= 55 ? "blue" : "amber"}">${recruitment.score}</span></td>
+                  <td>${recruitment.need ? `<span class="badge ${recruitment.need.tone}">${recruitment.need.position}</span>` : "-"}</td>
+                  <td><span class="badge ${recruitment.affordability.tone}">${recruitment.affordability.label}</span></td>
+                  <td>
+                    <div class="table-actions">
+                      <button class="btn-compact" data-action="scout-player" data-player-id="${player.id}">Scout</button>
+                      <button class="btn-compact" data-action="assign-scout" data-player-id="${player.id}">Assign</button>
+                      <button class="btn-compact" data-action="shortlist-player" data-player-id="${player.id}">Shortlist</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
           </tbody>
         </table>
       </div>
@@ -2064,6 +2185,20 @@
       render();
       return;
     }
+    if (action === "shortlist-player") {
+      const result = Engine.addToShortlist(state, actionEl.dataset.playerId);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (action === "remove-shortlist") {
+      const result = Engine.removeFromShortlist(state, actionEl.dataset.playerId);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
     if (action === "open-offer") {
       ui.modal = { type: "offer", playerId: actionEl.dataset.playerId };
       render();
@@ -2287,6 +2422,7 @@
     if (key === "squadSort") ui.squadSort = value;
     if (key === "marketSearch") ui.marketSearch = value;
     if (key === "marketPosition") ui.marketPosition = value;
+    if (key === "marketView") ui.marketView = value;
     if (key === "marketSort") ui.marketSort = value;
   }
 
@@ -2516,6 +2652,27 @@
     return `${activeHome ? "Home" : "Away"} vs ${opponent}${date}`;
   }
 
+  function marketPlayers() {
+    const ids = new Set((state.transfers.marketIds || []).concat(state.transfers.shortlist || [], state.transfers.freeAgentIds || []));
+    return Array.from(ids).map((id) => Engine.getPlayer(state, id)).filter(Boolean);
+  }
+
+  function filterMarketView(players, view) {
+    if (view === "recommended") {
+      const ids = new Set(Engine.recruitmentRecommendations(state, 24).map((item) => item.player.id));
+      return players.filter((player) => ids.has(player.id));
+    }
+    if (view === "shortlist") return players.filter((player) => Engine.isShortlisted(state, player.id));
+    if (view === "affordable") return players.filter((player) => {
+      const profile = Engine.recruitmentProfile(state, player.id);
+      return profile && profile.recruitment.affordability.score >= 58;
+    });
+    if (view === "freeAgents") return players.filter((player) => !player.clubId);
+    if (view === "prospects") return players.filter((player) => player.age <= 23 && player.potential - player.currentAbility >= 8);
+    if (view === "scouted") return players.filter((player) => Engine.getScoutView(state, player.id).confidence >= 45);
+    return players;
+  }
+
   function filterPlayers(players, search, position, availability) {
     const query = search.trim().toLowerCase();
     return players.filter((player) => {
@@ -2551,6 +2708,11 @@
     if (key === "fitness") return player.fitness;
     if (key === "sharpness") return player.sharpness;
     if (key === "morale") return player.morale;
+    if (key === "recruitmentScore") {
+      const recruitment = Engine.recruitmentTargetScore(state, player.id);
+      return recruitment ? recruitment.score : 0;
+    }
+    if (key === "confidence") return Engine.getScoutView(state, player.id).confidence;
     if (key === "value") return player.value;
     if (key === "wage") return player.wage;
     return player.currentAbility;
