@@ -232,7 +232,7 @@
         </div>
         ${screenAction(ui.screen)}
       </div>
-      <div class="screen-body">${renderer()}</div>
+      <div class="screen-body ${ui.commentaryPlaying ? "live-refresh" : ""}">${renderer()}</div>
     `;
   }
 
@@ -388,7 +388,7 @@
             ${items.slice(0, 5).map((item) => `
               <button class="watch-item" data-action="view-player" data-player-id="${escapeAttr(item.player.id)}">
                 <span>
-                  <strong>${escapeHtml(item.player.name)}</strong>
+                  <strong title="${escapeAttr(item.player.name)}">${escapeHtml(displayPlayerName(item.player))}</strong>
                   <small>${escapeHtml(item.status.detail)} | ${item.player.fitness}% fit</small>
                 </span>
                 <em class="badge ${item.status.tone}">${escapeHtml(item.status.label)}</em>
@@ -415,7 +415,7 @@
             ${rows.slice(0, 5).map((row) => `
               <button class="watch-item" data-action="view-player" data-player-id="${escapeAttr(row.player.id)}">
                 <span>
-                  <strong>${escapeHtml(row.player.name)}</strong>
+                  <strong title="${escapeAttr(row.player.name)}">${escapeHtml(displayPlayerName(row.player))}</strong>
                   <small>${row.player.age} yrs | ${row.growthRoom} growth room | ${Engine.trainingFocusLabel(row.player.trainingFocus)}</small>
                 </span>
                 <em class="badge ${row.delta > 0 ? "green" : "blue"}">${developmentDeltaLabel(row.delta)}</em>
@@ -553,7 +553,7 @@
         ${source === "bench" && slotIndex !== null && slotIndex !== undefined ? `data-bench-index="${slotIndex}"` : ""}
       >
         <div class="lineup-card-main">
-          <strong title="${escapeAttr(player.name)}">${escapeHtml(shortPlayerName(player.name))}</strong>
+          ${playerNameButton(player, "name-button")}
           <span>${positionBadge(player.position)}<em>CA ${player.currentAbility}</em></span>
         </div>
         <div class="lineup-card-side">
@@ -953,7 +953,7 @@
       <div class="grid four">
         ${metric("Top Need", primary ? primary.position : "-", primary ? `${primary.status} | ${primary.reasons[0]}` : "Squad covered")}
         ${metric("Shortlist", shortlist.length, "Tracked targets")}
-        ${metric("Top Target", topTarget ? topTarget.recruitment.score : "-", topTarget ? topTarget.player.name : "No targets")}
+        ${metric("Top Target", topTarget ? topTarget.recruitment.score : "-", topTarget ? displayPlayerName(topTarget.player) : "No targets")}
         ${metric("Affordable Fits", affordable, "Recommended targets")}
       </div>
       <div class="recruitment-layout">
@@ -1003,7 +1003,7 @@
     return `
       <div class="target-card">
         <span>
-          <strong>${escapeHtml(item.player.name)}</strong>
+          ${playerNameButton(item.player, "name-link target-name")}
           <small>${positionBadge(item.player.position)} ${escapeHtml(clubName(item.player.clubId))} | ${item.player.age} yrs</small>
         </span>
         <em class="badge ${item.recruitment.score >= 75 ? "green" : item.recruitment.score >= 55 ? "blue" : "amber"}">${item.recruitment.score}</em>
@@ -1023,7 +1023,7 @@
     return `
       <div class="target-card">
         <span>
-          <strong>${escapeHtml(player.name)}</strong>
+          ${playerNameButton(player, "name-link target-name")}
           <small>${positionBadge(player.position)} ${escapeHtml(clubName(player.clubId))} | ${Engine.getScoutView(state, player.id).confidence}% scouted</small>
         </span>
         <em class="badge ${score >= 75 ? "green" : score >= 55 ? "blue" : "amber"}">${score}</em>
@@ -1048,11 +1048,14 @@
     const matchToday = next && state.calendar && Engine.daysBetween(state.calendar.currentDate, next.date) <= 0;
     const items = [
       ...(matchToday ? [["Matchday", nextFixtureLabel(next), "green"]] : []),
-      ...injured.slice(0, 3).map((player) => ["Injury", `${player.name}: ${Engine.availabilityLabel(state, player)}`, "red"]),
-      ...suspended.slice(0, 2).map((player) => ["Suspension", `${player.name}: ${Engine.playerAvailabilityStatus(state, player).detail}`, "red"]),
-      ...expiring.slice(0, 3).map((player) => ["Contract", `${player.name}: ${player.contractYears} season${player.contractYears === 1 ? "" : "s"} left`, "amber"]),
-      ...tired.slice(0, 3).map((player) => ["Fitness", `${player.name}: ${player.fitness}% fitness`, "amber"]),
-      ...offers.slice(0, 3).map((offer) => ["Offer", `${Engine.getPlayer(state, offer.playerId)?.name || "Player"} bid from ${clubName(offer.fromClubId)}`, "blue"])
+      ...injured.slice(0, 3).map((player) => ["Injury", `${displayPlayerName(player)}: ${Engine.availabilityLabel(state, player)}`, "red"]),
+      ...suspended.slice(0, 2).map((player) => ["Suspension", `${displayPlayerName(player)}: ${Engine.playerAvailabilityStatus(state, player).detail}`, "red"]),
+      ...expiring.slice(0, 3).map((player) => ["Contract", `${displayPlayerName(player)}: ${player.contractYears} season${player.contractYears === 1 ? "" : "s"} left`, "amber"]),
+      ...tired.slice(0, 3).map((player) => ["Fitness", `${displayPlayerName(player)}: ${player.fitness}% fitness`, "amber"]),
+      ...offers.slice(0, 3).map((offer) => {
+        const player = Engine.getPlayer(state, offer.playerId);
+        return ["Offer", `${player ? displayPlayerName(player) : "Player"} bid from ${clubName(offer.fromClubId)}`, "blue"];
+      })
     ].slice(0, 6);
 
     if (!items.length) return "";
@@ -1260,7 +1263,7 @@
               const risk = report ? report.risk : Engine.injuryRiskLevel(state, player);
               return `
                 <tr class="${ui.selectedPlayerId === player.id ? "highlight" : ""}">
-                  <td><span class="player-name">${escapeHtml(player.name)}</span></td>
+                  <td>${playerNameButton(player)}</td>
                   <td>${positionBadge(player.position)}</td>
                   <td>${player.age}</td>
                   <td>${statusBadge(player)}</td>
@@ -1301,7 +1304,7 @@
               <tr>
                 <td>S${item.season} R${item.round}</td>
                 <td>${transferTypeLabel(item.type)}</td>
-                <td><span class="player-name">${escapeHtml(item.playerName)}</span></td>
+                <td>${Engine.getPlayer(state, item.playerId) ? playerNameButton(Engine.getPlayer(state, item.playerId)) : `<span class="player-name">${escapeHtml(item.playerName)}</span>`}</td>
                 <td>${escapeHtml(clubName(item.fromClubId))}</td>
                 <td>${escapeHtml(clubName(item.toClubId))}</td>
                 <td>${item.fee ? Engine.formatMoney(item.fee) : "-"}</td>
@@ -1334,7 +1337,7 @@
               const recTone = recruitment.score >= 78 ? "green" : recruitment.score >= 58 ? "blue" : recruitment.score >= 42 ? "amber" : "red";
               return `
                 <tr>
-                  <td><span class="player-name">${escapeHtml(player.name)}</span></td>
+                  <td>${playerNameButton(player)}</td>
                   <td>${isFreeAgent ? `<span class="badge blue">Free Agent</span>` : escapeHtml(clubName(player.clubId))}</td>
                   <td>${positionBadge(player.position)}</td>
                   <td>${player.age}</td>
@@ -1372,13 +1375,15 @@
     const report = Engine.playerDevelopmentReport(state, player.id);
     const availability = report.availability;
     const risk = report.risk;
+    const fc26 = Engine.fc26StyleStats(player);
+    const isOwnPlayer = player.clubId === state.activeClubId;
     return `
       <div class="player-detail">
         <div>
           <div class="player-profile-head">
             <div>
               <h2 class="panel-title">${escapeHtml(player.name)}</h2>
-              <div class="small-muted">${escapeHtml(player.nationality)} | ${escapeHtml(player.foot)} foot | ${player.height} cm</div>
+              <div class="small-muted">${escapeHtml(displayPlayerName(player))} | ${escapeHtml(clubName(player.clubId))} | ${escapeHtml(player.nationality)} | ${escapeHtml(player.foot)} foot | ${player.height} cm</div>
             </div>
             <span class="badge ${availability.tone}">${escapeHtml(availability.label)}</span>
           </div>
@@ -1390,7 +1395,8 @@
             ${metric("Fitness", `${player.fitness}%`, `${player.sharpness}% sharpness`)}
             ${metric("Risk", risk.label, risk.detail)}
           </div>
-          <div class="player-management-grid">
+          ${fc26 ? renderFc26Stats(fc26) : ""}
+          ${isOwnPlayer ? `<div class="player-management-grid">
             <div class="field">
               <label for="training-focus">Training Focus</label>
               <select id="training-focus" data-action="set-training-focus" data-player-id="${player.id}">
@@ -1404,7 +1410,7 @@
               </select>
             </div>
             <button class="btn-primary" data-action="rest-player" data-player-id="${player.id}">Rest / Rehab</button>
-          </div>
+          </div>` : ""}
           <div class="progress-list player-stat-row">
             ${progressCard("Apps", stats.apps)}
             ${progressCard("Goals", stats.goals)}
@@ -1422,7 +1428,7 @@
               ${bar(report.progress, report.progress > 86 ? "green" : report.progress > 68 ? "amber" : "red")}
             </div>
           </div>
-          ${player.source ? renderSourceStats(player.source) : ""}
+          ${player.source && player.source.provider ? renderSourceStats(player.source) : ""}
           <h3 class="panel-title" style="margin-top:14px">Development</h3>
           ${report.events.length ? `
             <div class="timeline">
@@ -1480,6 +1486,31 @@
               </div>
             `).join("")}
           </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderFc26Stats(stats) {
+    const items = [
+      ["PAC", stats.pac],
+      ["SHO", stats.sho],
+      ["PAS", stats.pas],
+      ["DRI", stats.dri],
+      ["DEF", stats.def],
+      ["PHY", stats.phy]
+    ];
+    return `
+      <div class="fc26-card">
+        <div>
+          <span>FC26 Style</span>
+          <strong>${stats.ovr}</strong>
+          <small>${escapeHtml(stats.matched ? "EA SPORTS FC 26 rating" : "Generated projection")}</small>
+        </div>
+        <div class="fc26-stat-grid">
+          ${items.map(([label, value]) => `
+            <span><strong>${Number.isFinite(value) ? value : "-"}</strong>${label}</span>
+          `).join("")}
         </div>
       </div>
     `;
@@ -1611,8 +1642,8 @@
           return `
             <div class="scorer-item">
               <span>
-                <strong>${escapeHtml(scorer ? scorer.name : "Unknown Player")}</strong>
-                ${assist ? `<small>Assist ${escapeHtml(assist.name)}</small>` : ""}
+                <strong>${scorer ? playerNameButton(scorer, "name-link scorer-name") : "Unknown Player"}</strong>
+                ${assist ? `<small>Assist ${playerNameButton(assist, "name-link assist-name")}</small>` : ""}
               </span>
               <em>${goal.minute}'</em>
             </div>
@@ -1641,7 +1672,7 @@
         ${metric("xG", `${match.stats.xg.home} - ${match.stats.xg.away}`, "Expected goals")}
         ${metric("Shots", `${match.stats.shots.home} - ${match.stats.shots.away}`, "Total attempts")}
         ${metric("Possession", `${match.stats.possession.home}% - ${match.stats.possession.away}%`, "Ball share")}
-        ${metric("Man of Match", match.manOfMatch ? Engine.getPlayer(state, match.manOfMatch).name : "-", "Highest rating")}
+        ${metric("Man of Match", match.manOfMatch ? displayPlayerName(Engine.getPlayer(state, match.manOfMatch)) : "-", "Highest rating")}
       </div>
     `;
   }
@@ -1664,7 +1695,7 @@
           ${metric("Press Turnovers", `${statPair(match, "pressTurnovers")}`, "Danger wins")}
           ${metric("Saves", `${statPair(match, "saves")}`, "Home - Away")}
           ${metric("Subs", `${statPair(match, "substitutions")}`, "Home - Away")}
-          ${metric("Man of Match", match.manOfMatch ? Engine.getPlayer(state, match.manOfMatch).name : "-", "Highest rating")}
+          ${metric("Man of Match", match.manOfMatch ? displayPlayerName(Engine.getPlayer(state, match.manOfMatch)) : "-", "Highest rating")}
         </div>
       </div>
     `;
@@ -1705,7 +1736,7 @@
             <div class="sub-chip">
               <span class="minute">${sub.minute}'</span>
               <strong>${escapeHtml(clubName(sub.teamId))}</strong>
-              <span>${escapeHtml(playerIn ? playerIn.name : "Player in")} for ${escapeHtml(playerOut ? playerOut.name : "Player out")}</span>
+              <span>${playerIn ? playerNameButton(playerIn, "name-link sub-name") : "Player in"} for ${playerOut ? playerNameButton(playerOut, "name-link sub-name") : "Player out"}</span>
               <em>${escapeHtml(sub.reason || "tactical")}</em>
             </div>
           `;
@@ -1734,7 +1765,7 @@
       <div class="panel">
         <div class="ratings-heading">
           <h2 class="panel-title">Player Ratings</h2>
-          ${motm ? `<span class="motm-chip">MOTM ${escapeHtml(motm.name)}</span>` : ""}
+          ${motm ? `<span class="motm-chip">MOTM ${escapeHtml(displayPlayerName(motm))}</span>` : ""}
         </div>
         <div class="ratings-grid">
           ${renderTeamRatings(match, match.homeClubId, "Home", visibleGoals)}
@@ -1767,7 +1798,7 @@
             return `
               <div class="rating-row ${item.playerId === match.manOfMatch ? "motm-row" : ""}">
                 <div class="rating-player">
-                  <strong>${escapeHtml(item.player.name)}</strong>
+                  <strong>${playerNameButton(item.player, "name-link rating-name")}</strong>
                   <span>${positionBadge(item.player.position)}${minutes ? `<em>${escapeHtml(minutes)}</em>` : ""}${contribution ? `<em>${escapeHtml(contribution)}</em>` : ""}</span>
                 </div>
                 <span class="rating-pill ${ratingToneClass(item.rating)}">${item.rating}</span>
@@ -1846,7 +1877,7 @@
               const player = Engine.getPlayer(state, offer.playerId);
               return `
                 <tr>
-                  <td>${player ? escapeHtml(player.name) : "Unknown"}</td>
+                  <td>${player ? playerNameButton(player) : "Unknown"}</td>
                   <td>${escapeHtml(clubName(offer.fromClubId))}</td>
                   <td>${Engine.formatMoney(offer.fee)}</td>
                   <td>
@@ -1874,7 +1905,7 @@
               const player = Engine.getPlayer(state, offer.playerId);
               return `
                 <tr>
-                  <td>${player ? escapeHtml(player.name) : "Unknown"}</td>
+                  <td>${player ? playerNameButton(player) : "Unknown"}</td>
                   <td>${escapeHtml(clubName(offer.sellerClubId))}</td>
                   <td>${Engine.formatMoney(offer.fee)} | ${Engine.formatMoney(offer.wage)}</td>
                   <td>${Engine.formatMoney(offer.counterFee)} | ${Engine.formatMoney(offer.counterWage)}</td>
@@ -1904,7 +1935,7 @@
               const incoming = agreement.toClubId === state.activeClubId;
               return `
                 <tr>
-                  <td>${player ? escapeHtml(player.name) : "Unknown"}</td>
+                  <td>${player ? playerNameButton(player) : "Unknown"}</td>
                   <td>${preAgreementTypeLabel(agreement.kind)}</td>
                   <td>${escapeHtml(clubName(incoming ? agreement.fromClubId : agreement.toClubId))}</td>
                   <td>${agreement.executeDate ? Engine.formatGameDate(agreement.executeDate) : "-"}</td>
@@ -1931,7 +1962,7 @@
               const report = player ? Engine.getScoutView(state, player.id) : null;
               return `
                 <tr>
-                  <td>${player ? escapeHtml(player.name) : "Unknown"}</td>
+                  <td>${player ? playerNameButton(player) : "Unknown"}</td>
                   <td>${assignment.status === "active" ? `<span class="badge blue">Active</span>` : `<span class="badge green">Complete</span>`}</td>
                   <td>${assignment.status === "active" ? `${assignment.daysRemaining !== undefined ? assignment.daysRemaining : (assignment.roundsRemaining || 0) * 7} days` : "-"}</td>
                   <td>${report ? `${report.confidence}%` : "0%"}</td>
@@ -1952,7 +1983,7 @@
           <tbody>
             ${items.map(({ report, player }) => `
               <tr>
-                <td>${escapeHtml(player.name)}</td>
+                <td>${playerNameButton(player)}</td>
                 <td>${escapeHtml(clubName(player.clubId))}</td>
                 <td>${rangeText(Engine.getScoutView(state, player.id).currentRange)} <span class="small-muted">${Engine.stars(report.observedAbility)}</span></td>
                 <td>${rangeText(Engine.getScoutView(state, player.id).potentialRange)} <span class="small-muted">${Engine.stars(report.observedPotential)}</span></td>
@@ -1982,7 +2013,7 @@
               const recruitment = Engine.recruitmentTargetScore(state, player.id);
               return `
                 <tr>
-                  <td>${escapeHtml(player.name)}</td>
+                  <td>${playerNameButton(player)}</td>
                   <td>${escapeHtml(clubName(player.clubId))}</td>
                   <td>${positionBadge(player.position)}</td>
                   <td>${player.age}</td>
@@ -2012,7 +2043,7 @@
           <thead><tr><th>Player</th><th>Pos</th><th>Wage</th><th>Value</th></tr></thead>
           <tbody>
             ${players.map((player) => `
-              <tr><td>${escapeHtml(player.name)}</td><td>${positionBadge(player.position)}</td><td>${Engine.formatMoney(player.wage)}</td><td>${Engine.formatMoney(player.value)}</td></tr>
+              <tr><td>${playerNameButton(player)}</td><td>${positionBadge(player.position)}</td><td>${Engine.formatMoney(player.wage)}</td><td>${Engine.formatMoney(player.value)}</td></tr>
             `).join("")}
           </tbody>
         </table>
@@ -2068,6 +2099,24 @@
 
   function renderModal() {
     if (!ui.modal) return "";
+    if (ui.modal.type === "player") {
+      const player = Engine.getPlayer(state, ui.modal.playerId);
+      if (!player) return "";
+      return `
+        <div class="modal-backdrop" data-action="close-modal">
+          <div class="modal player-modal" data-modal>
+            <div class="modal-head">
+              <div>
+                <h2>${escapeHtml(displayPlayerName(player))}</h2>
+                <div class="small-muted">${escapeHtml(player.name)} | ${escapeHtml(clubName(player.clubId))} | ${positionBadge(player.position)}</div>
+              </div>
+              <button class="btn-compact" data-action="close-modal">Close</button>
+            </div>
+            ${renderPlayerDetail(player)}
+          </div>
+        </div>
+      `;
+    }
     if (ui.modal.type === "offer") {
       const player = Engine.getPlayer(state, ui.modal.playerId);
       if (!player) return "";
@@ -2247,7 +2296,7 @@
     }
     if (action === "view-player") {
       ui.selectedPlayerId = actionEl.dataset.playerId;
-      ui.screen = ui.screen === "transfers" || ui.screen === "scouting" ? "squad" : ui.screen;
+      ui.modal = { type: "player", playerId: actionEl.dataset.playerId };
       render();
       return;
     }
@@ -2547,7 +2596,7 @@
 
   function simulateRound() {
     if (ui.commentaryPlaying) return;
-    const result = Engine.simulateNextDay(state);
+    const result = Engine.simulateUntilNextEvent(state, { maxDays: 28 });
     Storage.save(state);
     syncLineupSelection();
     if (!result.activeMatch) {
@@ -2556,7 +2605,10 @@
       if (result.seasonEnded && result.seasonSummary) {
         toast(`${result.seasonSummary.championName} won Season ${result.seasonSummary.season}.`, "good");
       } else {
-        toast(`${Engine.formatGameDate(result.date)} complete.`, result.matchday ? "good" : "warn");
+        const days = result.daysAdvanced || 1;
+        const label = days > 1 ? `${days} days advanced` : `${Engine.formatGameDate(result.date)} complete`;
+        const event = result.significantEvent;
+        toast(event ? `${label}: ${event.title}` : label, event ? "good" : "warn");
       }
       render();
       return;
@@ -2579,7 +2631,7 @@
     const total = ui.liveMatch && ui.liveMatch.commentary ? ui.liveMatch.commentary.length : 0;
     function tick() {
       ui.commentaryCount += 1;
-      render();
+      renderMatchTick();
       if (ui.commentaryCount < total) {
         global.setTimeout(tick, 360);
       } else {
@@ -2591,6 +2643,16 @@
       return;
     }
     global.setTimeout(tick, 220);
+  }
+
+  function renderMatchTick() {
+    const content = document.querySelector(".content");
+    if (!content || ui.screen !== "match") {
+      render();
+      return;
+    }
+    content.innerHTML = renderScreen();
+    scrollCommentaryToBottom();
   }
 
   function syncLineupSelection() {
@@ -2881,10 +2943,14 @@
     return option ? option.label : value || "-";
   }
 
-  function shortPlayerName(name) {
-    const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
-    if (parts.length <= 2) return parts.join(" ");
-    return `${parts[0][0]}. ${parts.slice(1).join(" ")}`;
+  function displayPlayerName(player) {
+    return Engine.playerDisplayName(player);
+  }
+
+  function playerNameButton(player, className) {
+    if (!player) return "Unknown";
+    const classes = className || "name-link player-name";
+    return `<button class="${classes}" type="button" data-action="view-player" data-player-id="${escapeAttr(player.id)}" title="${escapeAttr(player.name)}">${escapeHtml(displayPlayerName(player))}</button>`;
   }
 
   function progressCard(label, value) {
@@ -2958,7 +3024,7 @@
           ${players.slice(0, 5).map((player) => `
             <div class="timeline-item">
               <strong>${statValue(player, stat)}</strong>
-              <span>${escapeHtml(player.name)}<br><span class="small-muted">${escapeHtml(clubName(player.clubId))}</span></span>
+              <span>${playerNameButton(player, "name-link leader-name")}<br><span class="small-muted">${escapeHtml(clubName(player.clubId))}</span></span>
             </div>
           `).join("")}
         </div>

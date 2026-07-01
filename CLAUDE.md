@@ -70,6 +70,7 @@ Design target:
 - Visible scorers and assists as goals happen.
 - FotMob-style player ratings and match statistics.
 - Substitutions and bench involvement.
+- Live match updates now refresh only the match content area during playback, preventing screen blink from repeated page animations.
 
 ### Lineup + Tactics
 
@@ -87,6 +88,18 @@ Design target:
 - Fixture dates are assigned.
 - Matchdays are triggered by calendar date.
 - Fitness, sharpness, scouting assignments, transfer activity, training, and fixture simulation advance through daily progression.
+- Continue Day now advances through quiet days until a match, inbox event, transfer story, offer, market move, or season end.
+- Daily club events can now create training, morale, media, or minor-knock stories that affect players.
+
+### FC26 Ratings + Player Profiles
+
+- Added a compact EA SPORTS FC 26 Premier League ratings overlay from EA's public ratings page.
+- Matched players receive FC26-style OVR/PAC/SHO/PAS/DRI/DEF/PHY values and more realistic current ability.
+- Unmatched players receive generated EAFC-style projection stats from internal attributes.
+- Lineups, tables, ratings, leaders, scouting, transfers, and match-centre names now use common football display names.
+- Player profiles keep full names and show FC26-style stats, source/FPL stats where available, attributes, role fit, career history, and development.
+- Player profile modals are available from profile-name buttons across the app.
+- Existing saves migrate display names and FC26-style metadata.
 
 ### Training + Match Preparation
 
@@ -176,7 +189,7 @@ Design target:
 - `8b9be63` Add AI transfer activity and market news
 - `4137c9d` Expand AI loan market and transfer news
 
-The latest completed feature phase is Transfer News 2.0 + AI Market Polish.
+The latest completed feature phase is FC26 Ratings + Player Profiles.
 
 ## Current Roadmap
 

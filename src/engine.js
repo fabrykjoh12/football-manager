@@ -175,6 +175,7 @@
     line: "standard",
     focus: "mixed"
   };
+  const RATING_MODEL_VERSION = 3;
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -490,6 +491,222 @@
     return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : fallback;
   }
 
+  function averageNumbers(values, fallback) {
+    const valid = values.filter((value) => Number.isFinite(value));
+    return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : fallback;
+  }
+
+  function normalizeNameKey(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+
+  function compactNameKey(value) {
+    return normalizeNameKey(value).replace(/\b[a-z]\b/g, "").replace(/\s+/g, " ").trim();
+  }
+
+  function nameLastToken(value) {
+    const parts = normalizeNameKey(value).split(" ").filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : "";
+  }
+
+  function footballDisplayName(name) {
+    const raw = String(name || "").trim();
+    if (!raw) return "";
+    const particles = new Set(["da", "de", "del", "dos", "van", "von", "di", "la", "le", "du"]);
+    const parts = raw.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return parts[0];
+    const last = parts[parts.length - 1];
+    const previous = parts[parts.length - 2];
+    if (previous && particles.has(previous.toLowerCase())) return `${previous} ${last}`;
+    return last;
+  }
+
+  function playerDisplayName(player, style) {
+    if (!player) return "";
+    if (style === "full") return player.name || player.displayName || "";
+    return player.displayName || footballDisplayName(player.name);
+  }
+
+  function findFc26Rating(playerLike) {
+    const ratings = Data.FC26_PREMIER_LEAGUE_RATINGS || [];
+    if (!ratings.length || !playerLike) return null;
+    const candidates = [
+      playerLike.name,
+      playerLike.displayName,
+      playerLike.webName,
+      playerLike.source && playerLike.source.webName
+    ].filter(Boolean);
+    const keys = new Set(candidates.flatMap((candidate) => {
+      const normalized = normalizeNameKey(candidate);
+      const compact = compactNameKey(candidate);
+      const last = nameLastToken(candidate);
+      return [normalized, compact, last].filter((item) => item && item.length >= 3);
+    }));
+    const direct = ratings.find((rating) => {
+      const names = [rating.n, rating.c].filter(Boolean);
+      return names.some((name) => keys.has(normalizeNameKey(name)) || keys.has(compactNameKey(name)));
+    });
+    if (direct) return direct;
+    return ratings.find((rating) => {
+      const aliases = [rating.n, rating.c].filter(Boolean).map(nameLastToken).filter((item) => item.length >= 5);
+      return aliases.some((alias) => keys.has(alias));
+    }) || null;
+  }
+
+  function eafcAttributePatch(position, rating) {
+    const r = rating || {};
+    const ovr = Number(r.o || r.ovr || 60);
+    const pac = Number(r.pac || ovr);
+    const sho = Number(r.sho || ovr);
+    const pas = Number(r.pas || ovr);
+    const dri = Number(r.dri || ovr);
+    const def = Number(r.def || ovr);
+    const phy = Number(r.phy || ovr);
+    if (position === "GK") {
+      return {
+        pace: Math.round(clamp((pac + phy) / 2 - 16, 24, 78)),
+        acceleration: Math.round(clamp(pac - 32, 18, 74)),
+        agility: Math.round(clamp(dri - 6, 32, 94)),
+        balance: Math.round(clamp(dri - 14, 24, 88)),
+        reflexes: Math.round(clamp(dri, 40, 98)),
+        diving: Math.round(clamp(pac, 40, 98)),
+        handling: Math.round(clamp(sho, 40, 98)),
+        kicking: Math.round(clamp(pas, 35, 98)),
+        distribution: Math.round(clamp((pas + dri) / 2, 35, 98)),
+        oneOnOnes: Math.round(clamp((dri + ovr) / 2, 40, 98)),
+        aerialReach: Math.round(clamp((def + phy) / 2, 38, 98)),
+        commandOfArea: Math.round(clamp(phy, 38, 98)),
+        positioning: Math.round(clamp(phy, 38, 98)),
+        strength: Math.round(clamp(phy - 8, 30, 92)),
+        composure: Math.round(clamp(ovr, 40, 96)),
+        decisions: Math.round(clamp((ovr + pas) / 2, 36, 96))
+      };
+    }
+    const attackingPositioning = Math.round(clamp((sho + dri + pac) / 3, 22, 96));
+    return {
+      pace: Math.round(clamp(pac, 18, 98)),
+      acceleration: Math.round(clamp(pac + (dri - ovr) * 0.18, 18, 98)),
+      agility: Math.round(clamp((pac + dri * 1.35) / 2.35, 18, 98)),
+      balance: Math.round(clamp((dri + phy) / 2, 18, 98)),
+      finishing: Math.round(clamp(sho + (["ST", "RW", "LW", "AM"].includes(position) ? 3 : -4), 8, 98)),
+      longShots: Math.round(clamp((sho + pas) / 2, 8, 98)),
+      passing: Math.round(clamp(pas, 12, 98)),
+      vision: Math.round(clamp(pas + (position === "AM" || position === "CM" ? 3 : 0), 12, 98)),
+      crossing: Math.round(clamp(pas + (["RB", "LB", "RW", "LW"].includes(position) ? 3 : -2), 8, 98)),
+      dribbling: Math.round(clamp(dri, 12, 98)),
+      firstTouch: Math.round(clamp((dri + ovr) / 2, 12, 98)),
+      heading: Math.round(clamp((phy + def + (position === "ST" || position === "CB" ? 8 : -4)) / 2, 8, 98)),
+      tackling: Math.round(clamp(def, 8, 98)),
+      positioning: position === "ST" || position === "RW" || position === "LW" || position === "AM" ? attackingPositioning : Math.round(clamp(def + 2, 8, 98)),
+      marking: Math.round(clamp(def + (["CB", "RB", "LB", "DM"].includes(position) ? 2 : -5), 8, 98)),
+      strength: Math.round(clamp(phy, 16, 98)),
+      stamina: Math.round(clamp((phy + pac) / 2, 16, 98)),
+      jumping: Math.round(clamp((phy + pac) / 2 + (position === "CB" || position === "ST" ? 3 : 0), 16, 98)),
+      injuryResistance: Math.round(clamp((phy + ovr) / 2, 18, 96)),
+      naturalFitness: Math.round(clamp((phy + pac + ovr) / 3, 18, 96)),
+      technique: Math.round(clamp((dri + pas + sho) / 3, 12, 98)),
+      setPieces: Math.round(clamp((pas + sho) / 2, 8, 98)),
+      penalties: Math.round(clamp((sho + ovr) / 2, 8, 98)),
+      composure: Math.round(clamp((ovr + dri + sho) / 3, 12, 98)),
+      decisions: Math.round(clamp((ovr + pas) / 2, 12, 98)),
+      anticipation: Math.round(clamp((ovr + def + attackingPositioning) / 3, 12, 98)),
+      concentration: Math.round(clamp((ovr + def) / 2, 12, 98)),
+      leadership: Math.round(clamp(ovr - 8, 10, 92)),
+      workRate: Math.round(clamp((phy + def + pas) / 3, 12, 98)),
+      teamwork: Math.round(clamp((pas + ovr) / 2, 12, 98)),
+      aggression: Math.round(clamp((phy + def) / 2, 12, 98)),
+      bravery: Math.round(clamp((phy + def + ovr) / 3, 12, 98)),
+      flair: Math.round(clamp((dri + sho + pac) / 3, 8, 98)),
+      offTheBall: attackingPositioning
+    };
+  }
+
+  function applyFc26Profile(player, seedPlayer) {
+    const rating = findFc26Rating({ ...player, ...(seedPlayer || {}) });
+    if (rating) {
+      Object.assign(player.attributes, eafcAttributePatch(player.position, rating));
+      normalizeAttributeSet(player.attributes, player.position, rating.o);
+      player.currentAbility = Math.round(clamp(rating.o, 1, 99));
+      const potentialLift = player.age <= 21 ? 8 : player.age <= 24 ? 5 : player.age <= 27 ? 2 : 0;
+      player.potential = Math.round(clamp(Math.max(player.potential || player.currentAbility, player.currentAbility + potentialLift), player.currentAbility, 99));
+      player.ratingModelVersion = RATING_MODEL_VERSION;
+      player.displayName = footballDisplayName(rating.c || rating.n || player.name);
+      player.source = player.source || {};
+      player.source.fc26 = {
+        matched: true,
+        name: rating.n,
+        commonName: rating.c || null,
+        source: Data.FC26_RATINGS_SOURCE.name,
+        ovr: rating.o,
+        pac: rating.pac,
+        sho: rating.sho,
+        pas: rating.pas,
+        dri: rating.dri,
+        def: rating.def,
+        phy: rating.phy
+      };
+      return true;
+    }
+    player.ratingModelVersion = RATING_MODEL_VERSION;
+    player.displayName = player.displayName || footballDisplayName(player.name);
+    player.source = player.source || {};
+    player.source.fc26 = {
+      matched: false,
+      source: "Generated EAFC-style projection",
+      ...fc26StyleStats(player)
+    };
+    return false;
+  }
+
+  function fc26StyleStats(player) {
+    if (player && player.source && player.source.fc26 && Number.isFinite(player.source.fc26.ovr)) {
+      const rating = player.source.fc26;
+      return {
+        source: rating.source || "EAFC-style",
+        matched: !!rating.matched,
+        ovr: rating.ovr,
+        pac: rating.pac,
+        sho: rating.sho,
+        pas: rating.pas,
+        dri: rating.dri,
+        def: rating.def,
+        phy: rating.phy
+      };
+    }
+    if (!player) return null;
+    const a = player.attributes || {};
+    if (player.position === "GK") {
+      return {
+        source: "Generated EAFC-style projection",
+        matched: false,
+        ovr: player.currentAbility,
+        pac: Math.round(averageNumbers([a.diving, a.reflexes], player.currentAbility)),
+        sho: Math.round(averageNumbers([a.handling, a.oneOnOnes], player.currentAbility)),
+        pas: Math.round(averageNumbers([a.kicking, a.distribution, a.passing], player.currentAbility)),
+        dri: Math.round(averageNumbers([a.reflexes, a.agility], player.currentAbility)),
+        def: Math.round(averageNumbers([a.commandOfArea, a.aerialReach], player.currentAbility)),
+        phy: Math.round(averageNumbers([a.positioning, a.strength, a.composure], player.currentAbility))
+      };
+    }
+    return {
+      source: "Generated EAFC-style projection",
+      matched: false,
+      ovr: player.currentAbility,
+      pac: Math.round(averageNumbers([a.pace, a.acceleration], player.currentAbility)),
+      sho: Math.round(averageNumbers([a.finishing, a.longShots, a.composure], player.currentAbility)),
+      pas: Math.round(averageNumbers([a.passing, a.vision, a.crossing], player.currentAbility)),
+      dri: Math.round(averageNumbers([a.dribbling, a.firstTouch, a.agility], player.currentAbility)),
+      def: Math.round(averageNumbers([a.tackling, a.marking, a.positioning], player.currentAbility)),
+      phy: Math.round(averageNumbers([a.strength, a.stamina, a.jumping], player.currentAbility))
+    };
+  }
+
   function generatePlayer(state, club, position, index) {
     const reputation = club.reputation || 65;
     const age = random(state) < 0.28 ? randomInt(state, 17, 22) : randomInt(state, 23, 33);
@@ -597,7 +814,7 @@
         cleanSheets: seedPlayer.cleanSheets
       }
     };
-    player.currentAbility = calculateAbilityFromAttributes(player);
+    applyFc26Profile(player, seedPlayer);
     player.value = calculatePlayerValue(player);
     player.wage = calculateWage(player);
     player.development.push(snapshotDevelopment(player, 1));
@@ -608,9 +825,10 @@
     const cost = Number(seedPlayer.cost || 40);
     const points = Number(seedPlayer.totalPoints || 0);
     const starts = Number(seedPlayer.starts || 0);
+    const minutes = Number(seedPlayer.minutes || 0);
     const clubLift = (club.reputation || 65) * 0.13;
-    const score = 42 + Math.max(0, cost - 35) * 0.26 + Math.min(22, points / 10) + Math.min(7, starts / 5) + clubLift;
-    return Math.round(clamp(score, 48, 95));
+    const score = 43 + Math.max(0, cost - 35) * 0.32 + Math.min(18, points / 12) + Math.min(7, starts / 5.5) + Math.min(4, minutes / 900) + clubLift;
+    return Math.round(clamp(score, 48, 90));
   }
 
   function calculateSeededPotential(state, seedPlayer, age, currentAbility) {
@@ -1062,6 +1280,7 @@
     player.suspension = player.suspension || null;
     player.form = Array.isArray(player.form) ? player.form : [];
     player.secondaryPositions = Array.isArray(player.secondaryPositions) ? player.secondaryPositions : [];
+    player.displayName = player.displayName || footballDisplayName(player.name);
     return player;
   }
 
@@ -2257,6 +2476,42 @@
     });
   }
 
+  function maybeGenerateDailyClubEvent(state) {
+    const club = getClub(state, state.activeClubId);
+    if (!club || random(state) > 0.11) return null;
+    const squad = clubPlayers(state, club.id).filter((player) => !isUnavailable(state, player));
+    if (!squad.length) return null;
+    const roll = random(state);
+    if (roll < 0.32) {
+      const player = pick(state, squad.slice().sort((a, b) => b.potential - b.currentAbility - (a.potential - a.currentAbility)).slice(0, 8));
+      player.sharpness = Math.round(clamp(player.sharpness + randomInt(state, 3, 7), 0, 100));
+      player.morale = Math.round(clamp(player.morale + randomInt(state, 2, 6), 0, 100));
+      addInbox(state, "Training Standout", `${player.name} impressed staff in training and looks sharper for the next match.`);
+      return { type: "training", title: "Training Standout", playerId: player.id };
+    }
+    if (roll < 0.58) {
+      const leaders = squad.slice().sort((a, b) => b.currentAbility + b.morale - (a.currentAbility + a.morale)).slice(0, 6);
+      const player = pick(state, leaders);
+      squad.forEach((item) => {
+        if (random(state) < 0.28) item.morale = Math.round(clamp(item.morale + randomInt(state, 1, 4), 0, 100));
+      });
+      addInbox(state, "Squad Mood", `${player.name} helped lift the dressing room after a strong team meeting.`);
+      return { type: "morale", title: "Squad Mood", playerId: player.id };
+    }
+    if (roll < 0.78) {
+      const player = pick(state, squad.slice().sort((a, b) => b.seasonStats.ratingTotal - a.seasonStats.ratingTotal).slice(0, 10));
+      player.morale = Math.round(clamp(player.morale + randomInt(state, 1, 5), 0, 100));
+      addInbox(state, "Media Watch", `${player.name} drew positive media attention ahead of the next fixture.`);
+      return { type: "media", title: "Media Watch", playerId: player.id };
+    }
+    const candidates = squad.filter((player) => player.fitness > 52 && !player.injury);
+    const player = candidates.length ? pick(state, candidates) : pick(state, squad);
+    player.fitness = Math.round(clamp(player.fitness - randomInt(state, 5, 11), 0, 100));
+    player.sharpness = Math.round(clamp(player.sharpness - randomInt(state, 1, 4), 0, 100));
+    addInbox(state, "Minor Knock", `${player.name} took a knock in training. Medical staff expect them to be available, but fitness has dipped.`);
+    return { type: "knock", title: "Minor Knock", playerId: player.id };
+  }
+
   function simulateFixturesForDate(state, date) {
     const dueRounds = state.league.schedule.filter((roundData) => {
       const hasUnplayed = roundData.fixtures.some((fixture) => !fixture.played);
@@ -2302,10 +2557,11 @@
     recoverSquadsDaily(state);
     updateMatchPrepFamiliarity(state);
     processScoutingAssignmentsDaily(state);
+    const clubEvent = maybeGenerateDailyClubEvent(state);
     const offer = maybeGenerateDailyAiOffer(state);
     const aiMarketMove = maybeProcessDailyAiClubTransfer(state);
     const matchday = simulateFixturesForDate(state, processedDate);
-    if (offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
+    if (clubEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
 
     let seasonEnded = false;
     let seasonSummary = null;
@@ -2325,10 +2581,53 @@
       fixtures: matchday.fixtures,
       activeMatch: matchday.activeMatch,
       matchday: matchday.fixtures.length > 0,
+      clubEvent,
+      offer,
       aiMarketMove,
       seasonEnded,
       seasonSummary
     };
+  }
+
+  function latestInboxEvent(state, beforeCount) {
+    const items = state.inbox || [];
+    if (items.length <= beforeCount) return null;
+    const item = items[0];
+    return item ? { type: "inbox", title: item.title, body: item.body, id: item.id } : null;
+  }
+
+  function latestTransferNewsEvent(state, beforeCount) {
+    const news = state.transfers && state.transfers.news ? state.transfers.news : [];
+    if (news.length <= beforeCount) return null;
+    const item = news[0];
+    return item ? { type: "transfer-news", title: item.title, body: item.body, id: item.id } : null;
+  }
+
+  function describeDayEvent(state, before, result) {
+    if (result.activeMatch) return { type: "match", title: "Matchday", body: "The next match is ready." };
+    if (result.seasonEnded) return { type: "season", title: "Season Complete", body: result.seasonSummary ? `${result.seasonSummary.championName} won the league.` : "The season has finished." };
+    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
+  }
+
+  function simulateUntilNextEvent(state, options) {
+    const maxDays = options && options.maxDays ? options.maxDays : 21;
+    const days = [];
+    let lastResult = null;
+    for (let i = 0; i < maxDays; i += 1) {
+      const before = {
+        inbox: (state.inbox || []).length,
+        news: state.transfers && state.transfers.news ? state.transfers.news.length : 0
+      };
+      const result = simulateNextDay(state);
+      const event = describeDayEvent(state, before, result);
+      result.significantEvent = event;
+      days.push(result);
+      lastResult = result;
+      if (event || result.activeMatch || result.seasonEnded) {
+        return { ...result, daysAdvanced: days.length, skippedDays: Math.max(0, days.length - 1), days, significantEvent: event };
+      }
+    }
+    return { ...lastResult, daysAdvanced: days.length, skippedDays: Math.max(0, days.length - 1), days, significantEvent: null };
   }
 
   function simulateNextRound(state) {
@@ -4158,6 +4457,17 @@
       player.development = player.development || [snapshotDevelopment(player, state.season || 1)];
       player.injury = player.injury || null;
       normalizePlayerState(player);
+      if (player.realWorld && player.ratingModelVersion !== RATING_MODEL_VERSION) {
+        applyFc26Profile(player);
+        player.value = calculatePlayerValue(player);
+      } else if (!player.source || !player.source.fc26) {
+        player.source = player.source || {};
+        player.source.fc26 = {
+          matched: false,
+          source: "Generated EAFC-style projection",
+          ...fc26StyleStats(player)
+        };
+      }
     });
     (state.scouting.assignments || []).forEach((assignment) => {
       assignment.daysRemaining = assignment.status === "active" ? assignment.daysRemaining === undefined ? Math.max(1, (assignment.roundsRemaining || 1) * 7) : assignment.daysRemaining : 0;
@@ -4189,6 +4499,8 @@
     calculateWage,
     averageRating,
     weeklyWageSpend,
+    playerDisplayName,
+    fc26StyleStats,
     availabilityLabel,
     isInjured,
     isSuspended,
@@ -4226,6 +4538,7 @@
     addToShortlist,
     removeFromShortlist,
     simulateNextDay,
+    simulateUntilNextEvent,
     simulateNextRound,
     simulateFixture,
     finishSeason,

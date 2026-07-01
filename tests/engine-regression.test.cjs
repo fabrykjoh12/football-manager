@@ -61,6 +61,14 @@ function run() {
   assert.ok(Array.isArray(save.transfers.news), "New saves should include a transfer news feed");
   assert.ok(save.league.schedule[0].date, "Rounds should have match dates");
   assert.equal(save.league.schedule[0].fixtures[0].date, save.league.schedule[0].date, "Fixtures should inherit round dates");
+  const saka = Object.values(save.players).find((player) => player.name === "Bukayo Saka");
+  assert.ok(saka, "Premier League seed should include real Arsenal players");
+  assert.equal(Engine.playerDisplayName(saka), "Saka", "Lineup display names should use common football names");
+  assert.equal(saka.currentAbility, 88, "FC26 rating overlay should update matched current ability");
+  const sakaFc26 = Engine.fc26StyleStats(saka);
+  assert.equal(sakaFc26.matched, true, "Matched players should keep FC26 rating metadata");
+  assert.equal(sakaFc26.ovr, 88, "FC26-style stats should expose overall rating");
+  assert.equal(sakaFc26.pac, 84, "FC26-style stats should expose pace rating");
   const legacySave = Engine.cloneState(save);
   legacySave.version = "1.2.0";
   delete legacySave.league.clubs[0].tactics;
@@ -158,6 +166,11 @@ function run() {
   assert.ok(matchdayResult && matchdayResult.activeMatch, "Daily progression should eventually reach the active club match");
   assert.equal(matchdayResult.date, firstFixture.date, "The active match should be played on its fixture date");
   assert.ok(Engine.daysBetween(firstDate, firstFixture.date) > 0, "The first fixture should be scheduled after preseason begins");
+  const eventFlowSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 7777 });
+  const eventFlow = Engine.simulateUntilNextEvent(eventFlowSave, { maxDays: 30 });
+  assert.ok(eventFlow.daysAdvanced >= 1, "Continue flow should advance at least one day");
+  assert.equal(eventFlow.days.length, eventFlow.daysAdvanced, "Continue flow should report all simulated days");
+  assert.ok(eventFlow.activeMatch || eventFlow.significantEvent || eventFlow.seasonEnded, "Continue flow should stop at a match, event, or season end");
 
   const recoverySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 8888 });
   const physicalSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 8888 });
