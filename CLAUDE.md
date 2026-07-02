@@ -245,6 +245,17 @@ Design target:
 - Rollover creates the next season's Continental Cup draw from the completed league/cup outcomes.
 - Regression tests cover European migration, competition creation, daily European live matches, player ratings, season archives, and next-season qualifier storage.
 
+### Premium UI/UX Design System Pass
+
+- The app now defaults to a dark-first premium sports analytics visual identity while preserving light mode.
+- Global design tokens were upgraded for darker surfaces, sharper borders, stronger accent colors, refined shadows, focus rings, and consistent radius.
+- Sidebar navigation now has grouped sections, active-state indicators, club/date/reputation context, and a compact mobile horizontal nav.
+- Top bar now acts as a manager status strip with next match, table position, board confidence, morale, transfer budget, wage pressure, and a prominent Continue action.
+- Dashboard was redesigned into a command center with a next-match card, squad/board/Europe pulse metrics, season objective preview, and insight cards for scorers, performers, and breakout players.
+- Shared cards, panels, metrics, tables, toolbars, badges, empty states, match centre, player dossier cards, and recruitment/scouting surfaces received premium dark styling.
+- Tables and horizontal nav now use containment/min-width constraints so desktop and mobile avoid page-level overflow while retaining internal scrolling.
+- Browser QA covered dashboard, squad, match day, console errors, desktop overflow, and mobile overflow.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
@@ -260,8 +271,9 @@ Design target:
 - `bccc3c9` Add staff room and tactical roles
 - `b09c4c0` Add board objectives and domestic cup
 - `06ceb1c` Add European qualification and Continental Cup
+- Current session: Premium UI/UX design system pass
 
-The latest completed feature phase is European Qualification + Continental Competition.
+The latest completed feature phase is Premium UI/UX Design System Pass.
 
 ## Current Roadmap
 

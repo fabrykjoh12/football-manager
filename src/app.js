@@ -9,7 +9,7 @@
   let state = Storage.load();
   const ui = {
     screen: "dashboard",
-    theme: global.localStorage.getItem("touchline-lite-theme") || "light",
+    theme: global.localStorage.getItem("touchline-lite-theme") || "dark",
     setupClubId: Data.CLUB_TEMPLATES[0].id,
     setupMode: "existing",
     squadSearch: "",
@@ -105,7 +105,15 @@
 
     const club = activeClub();
     const next = Engine.getNextFixture(state, club.id);
+    const table = Engine.calculateTable(state);
+    const activeRow = table.find((row) => row.clubId === club.id);
+    const rank = activeRow ? table.indexOf(activeRow) + 1 : "-";
+    const board = Engine.boardReport(state);
+    const happiness = Engine.squadHappinessReport(state, club.id);
     const currentDate = state.calendar ? Engine.formatGameDate(state.calendar.currentDate) : "";
+    const wageSpend = Engine.weeklyWageSpend(state, club.id);
+    const wagePressure = Math.round(wageSpend / Math.max(1, club.wageBudget) * 100);
+    const moraleTone = happiness.averageScore >= 72 ? "green" : happiness.averageScore >= 55 ? "blue" : happiness.averageScore >= 40 ? "amber" : "red";
     app.innerHTML = `
       <div class="app-shell">
         <aside class="sidebar">
@@ -116,8 +124,22 @@
               <div class="brand-subtitle">Season ${state.season} | ${state.league.name}</div>
             </div>
           </div>
+          <div class="sidebar-context">
+            <div>
+              <span>Club</span>
+              <strong>${escapeHtml(club.name)}</strong>
+            </div>
+            <div>
+              <span>Date</span>
+              <strong>${escapeHtml(currentDate)}</strong>
+            </div>
+            <div>
+              <span>Reputation</span>
+              <strong>${state.manager.reputation}/100</strong>
+            </div>
+          </div>
           <nav class="nav">
-            ${NAV.map(([id, label]) => `<button class="${ui.screen === id ? "active" : ""}" ${ui.screen === id ? 'aria-current="page"' : ""} data-action="nav" data-screen="${id}">${label}</button>`).join("")}
+            ${renderNav()}
           </nav>
           <div class="save-tools">
             <button data-action="save-game">Save</button>
@@ -134,10 +156,17 @@
               <div class="club-name">${escapeHtml(club.name)}</div>
               <div class="club-meta">${escapeHtml(currentDate)} | ${next ? nextFixtureLabel(next) : "Season complete"} | Round ${Math.min(state.league.currentRound + 1, state.league.schedule.length)} of ${state.league.schedule.length}</div>
             </div>
+            <div class="top-match">
+              <span>Next Match</span>
+              <strong>${next ? escapeHtml(nextFixtureLabel(next).replace(/^.*?: /, "")) : "Season complete"}</strong>
+            </div>
             <div class="top-stats">
-              <span class="pill blue">${Engine.formatMoney(club.balance)} balance</span>
+              <span class="pill blue">${activeRow ? ordinal(rank) : "-"} | ${activeRow ? activeRow.points : 0} pts</span>
+              <span class="pill ${board.status.tone}">Board ${board.confidence}/100</span>
+              <span class="pill ${moraleTone}">Morale ${happiness.averageScore}/100</span>
               <span class="pill green">${Engine.formatMoney(club.transferBudget)} transfers</span>
-              <span class="pill amber">${Engine.formatMoney(Engine.weeklyWageSpend(state, club.id))} / ${Engine.formatMoney(club.wageBudget)} wages</span>
+              <span class="pill amber">${wagePressure}% wages</span>
+              <button class="btn-green top-continue" data-action="simulate-round" ${ui.commentaryPlaying ? "disabled" : ""}>Continue</button>
             </div>
           </header>
           <section class="content">${renderScreen()}</section>
@@ -208,6 +237,25 @@
     `;
   }
 
+  function renderNav() {
+    const groups = [
+      { label: "Command", screens: ["dashboard", "match", "league", "history"] },
+      { label: "Squad", screens: ["squad", "lineup", "tactics", "training", "staff", "academy"] },
+      { label: "Market", screens: ["transfers", "scouting", "stats", "finances", "manager"] }
+    ];
+    return groups.map((group) => `
+      <div class="nav-group">
+        <span>${escapeHtml(group.label)}</span>
+        ${group.screens.map((screenId) => {
+          const navItem = NAV.find(([id]) => id === screenId);
+          if (!navItem) return "";
+          const [id, label] = navItem;
+          return `<button class="${ui.screen === id ? "active" : ""}" ${ui.screen === id ? 'aria-current="page"' : ""} data-action="nav" data-screen="${id}"><span>${escapeHtml(label)}</span></button>`;
+        }).join("")}
+      </div>
+    `).join("");
+  }
+
   function renderScreen() {
     const title = NAV.find(([id]) => id === ui.screen);
     const heading = title ? title[1] : "Dashboard";
@@ -266,7 +314,7 @@
   }
 
   function screenAction(screen) {
-    if (screen === "dashboard" || screen === "match") {
+    if (screen === "match") {
       return `<button class="btn-green" data-action="simulate-round" ${ui.commentaryPlaying ? "disabled" : ""}>Continue Day</button>`;
     }
     if (screen === "lineup") {
@@ -297,6 +345,12 @@
     const squad = Engine.clubPlayers(state, club.id);
     const avgAge = round(avg(squad.map((player) => player.age)), 1);
     const avgAbility = round(avg(squad.map((player) => player.currentAbility)), 1);
+    const availability = Engine.squadAvailabilityReport(state, club.id);
+    const development = Engine.squadDevelopmentReport(state, club.id);
+    const happiness = Engine.squadHappinessReport(state, club.id);
+    const topScorer = leaders.goals.find((player) => player.seasonStats.goals > 0);
+    const bestPerformer = leaders.averageRating[0];
+    const breakout = (development.risers[0] || development.prospects[0] || {}).player;
     const last = state.lastMatch;
     const rank = activeRow ? table.indexOf(activeRow) + 1 : "-";
 
@@ -314,20 +368,40 @@
         </div>
       </div>
       ${renderActionQueue()}
+      <div class="dashboard-command section-gap">
+        <div class="next-match-card">
+          <div class="eyebrow">Next Match</div>
+          <h3>${next ? escapeHtml(nextFixtureLabel(next).replace(/^.*?: /, "")) : "Season complete"}</h3>
+          <div class="match-meta-row">
+            <span>${next ? escapeHtml(next.competitionName || state.league.name) : "Calendar"}</span>
+            <span>${next && next.date ? escapeHtml(Engine.formatGameDate(next.date)) : "-"}</span>
+            <span>${next ? `${daysToNext} day${daysToNext === 1 ? "" : "s"}` : "Done"}</span>
+          </div>
+          ${next ? renderFixture(next) : `<div class="empty-state">No fixture available.</div>`}
+          <button class="btn-green command-button" data-action="simulate-round" ${ui.commentaryPlaying ? "disabled" : ""}>Continue Day</button>
+        </div>
+        <div class="pulse-grid">
+          ${metric("Board Confidence", `${board.confidence}/100`, board.status.label)}
+          ${metric("Squad Morale", `${happiness.averageScore}/100`, `${happiness.unhappy.length} concerns`)}
+          ${metric("Availability", availability.available, `${availability.injured} injured | ${availability.suspended} suspended`)}
+          ${metric("Europe", europe.activeQualified ? europe.activeStage : "Not Qualified", europe.nextFixture ? nextFixtureLabel(europe.nextFixture) : europe.championName || "Qualification race")}
+        </div>
+        <div class="insight-stack">
+          ${dashboardInsight("Top Scorer", topScorer ? displayPlayerName(topScorer) : "-", topScorer ? `${topScorer.seasonStats.goals} goals` : "No scorer yet", "green")}
+          ${dashboardInsight("Best Performer", bestPerformer ? displayPlayerName(bestPerformer) : "-", bestPerformer ? `${round(Engine.averageRating(bestPerformer.seasonStats), 2)} avg rating` : "Awaiting ratings", "blue")}
+          ${dashboardInsight("Breakout Player", breakout ? displayPlayerName(breakout) : "-", breakout ? `${breakout.currentAbility}/${breakout.potential} ability` : "No development trend yet", "amber")}
+        </div>
+      </div>
       <div class="grid four section-gap">
         ${metric("Today", state.calendar ? Engine.formatGameDate(state.calendar.currentDate) : "-", next ? `${daysToNext} day${daysToNext === 1 ? "" : "s"} to match` : "Season complete")}
         ${metric("League Position", activeRow ? ordinal(rank) : "-", `${activeRow ? activeRow.points : 0} points`)}
-        ${metric("Board Confidence", `${board.confidence}/100`, board.status.label)}
         ${metric("Cup Run", cup.activeEliminated ? "Eliminated" : cup.championClubId === club.id ? "Winners" : cup.bestRoundLabel, cup.nextFixture ? nextFixtureLabel(cup.nextFixture) : cup.championName || "Awaiting draw")}
-        ${metric("Europe", europe.activeQualified ? europe.activeStage : "Not Qualified", europe.nextFixture ? nextFixtureLabel(europe.nextFixture) : europe.championName || "Qualification race")}
+        ${metric("Squad Profile", `${avgAbility} CA`, `${avgAge} avg age`)}
       </div>
       <div class="grid three" style="margin-top:14px">
         <div class="panel">
-          <h2 class="panel-title">Next Match</h2>
-          ${next ? renderFixture(next) : `<div class="empty-state">No fixture available.</div>`}
-          <div style="margin-top:12px">
-            <button class="btn-green" data-action="simulate-round" ${ui.commentaryPlaying ? "disabled" : ""}>Continue Day</button>
-          </div>
+          <h2 class="panel-title">Season Objectives</h2>
+          ${renderBoardObjectives({ ...board, objectives: board.objectives.slice(0, 4), reviews: [] })}
         </div>
         <div class="panel">
           <h2 class="panel-title">League Snapshot</h2>
@@ -3561,6 +3635,16 @@
         <div class="metric-label">${escapeHtml(label)}</div>
         <div class="metric-value">${escapeHtml(String(value))}</div>
         <div class="metric-delta">${escapeHtml(delta || "")}</div>
+      </div>
+    `;
+  }
+
+  function dashboardInsight(label, value, detail, tone) {
+    return `
+      <div class="dashboard-insight ${tone || ""}">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+        <small>${escapeHtml(detail || "")}</small>
       </div>
     `;
   }
