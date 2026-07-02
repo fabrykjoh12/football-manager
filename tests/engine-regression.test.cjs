@@ -54,7 +54,9 @@ function run() {
 
   const save = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 1234 });
   assert.equal(save.league.clubs.length, 20, "Premier League should contain 20 clubs");
-  assert.equal(Object.keys(save.players).length, 480, "Seed should create 480 senior players");
+  const leaguePlayerCount = save.league.clubs.reduce((sum, club) => sum + club.squad.length, 0);
+  assert.equal(leaguePlayerCount, 480, "Seed should create 480 Premier League senior players");
+  assert.ok(Object.keys(save.players).length > leaguePlayerCount, "European pool should add continental squads outside the league");
   assert.equal(save.league.schedule.length, 38, "Premier League season should have 38 rounds");
   assert.equal(save.league.schedule[0].fixtures.length, 10, "Each round should contain 10 fixtures");
   assert.ok(save.calendar.currentDate, "New saves should include a current calendar date");
@@ -88,12 +90,14 @@ function run() {
   delete legacySave.league.clubs[0].roleAssignments;
   delete legacySave.board;
   delete legacySave.cups;
+  delete legacySave.europe;
   const migratedLegacy = Engine.migrateState(legacySave);
   assert.equal(migratedLegacy.league.clubs[0].tactics.focus, "mixed", "Migration should backfill club tactics");
   assert.ok(migratedLegacy.league.clubs[0].staff.coaching, "Migration should backfill staff departments");
   assert.equal(Object.keys(migratedLegacy.league.clubs[0].roleAssignments).length, 11, "Migration should backfill tactical roles");
   assert.ok(migratedLegacy.board && migratedLegacy.board.objectives.league, "Migration should backfill board objectives");
   assert.ok(migratedLegacy.cups && migratedLegacy.cups.domestic.rounds.length > 0, "Migration should backfill domestic cup state");
+  assert.ok(migratedLegacy.europe && migratedLegacy.europe.competition.rounds.length > 0, "Migration should backfill European competition state");
   assert.ok(migratedLegacy.academy.prospects.length > 0, "Migration should backfill academy state");
   assert.equal(migratedLegacy.players[saka.id].potential, 90, "Migration should reapply matched player potentials");
 
@@ -114,11 +118,16 @@ function run() {
   assert.equal(activeClub.matchPrep, "balanced", "New saves should include match preparation");
   assert.ok(save.board && save.board.objectives.league, "New saves should include board objectives");
   const board = Engine.boardReport(save);
-  assert.equal(board.objectives.length, 6, "Board reports should include all core objectives");
+  assert.ok(board.objectives.length >= 6, "Board reports should include all core objectives");
+  assert.ok(board.objectives.some((objective) => objective.key === "europe"), "European qualifiers should receive a European board objective");
   assert.ok(board.confidence >= 1 && board.confidence <= 100, "Board confidence should be scored");
   const cup = Engine.domesticCupReport(save);
   assert.equal(cup.rounds.length, Engine.DOMESTIC_CUP_ROUNDS.length, "Domestic cup should include all configured rounds");
   assert.equal(cup.rounds[0].fixtures.length, 4, "Domestic cup should start with four play-off ties");
+  const europe = Engine.europeanReport(save);
+  assert.equal(europe.rounds.length, Engine.EUROPEAN_ROUNDS.length, "European competition should include every configured round");
+  assert.equal(europe.teams.length, 8, "European competition should start with an eight-club field");
+  assert.equal(europe.rounds[0].fixtures.length, 4, "European group matchdays should contain four fixtures");
   assert.ok(activeClub.staff && activeClub.staff.coaching, "New saves should include staff departments");
   const staffReport = Engine.staffRoomReport(save, activeClub.id);
   assert.equal(staffReport.departments.length, Object.keys(Engine.STAFF_DEPARTMENTS).length, "Staff reports should include every department");
@@ -238,6 +247,19 @@ function run() {
   assert.ok(cupMatchDay && cupMatchDay.activeMatch, "Daily progression should surface active domestic cup matches");
   assert.ok(cupMatchDay.activeMatch.winnerClubId, "Cup matches should resolve a knockout winner");
   assert.ok(Engine.domesticCupReport(cupSave).bestRoundIndex >= 0, "Domestic cup reports should track the active club cup run");
+
+  const europeSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 6161 });
+  let europeMatchDay = null;
+  for (let i = 0; i < 170; i += 1) {
+    const day = Engine.simulateNextDay(europeSave);
+    if (day.activeMatch && day.activeMatch.competitionType === "europe") {
+      europeMatchDay = day;
+      break;
+    }
+  }
+  assert.ok(europeMatchDay && europeMatchDay.activeMatch, "Daily progression should surface active European matches");
+  assert.equal(europeMatchDay.activeMatch.competitionName, "Continental Cup", "European live matches should identify the competition");
+  assert.ok(europeMatchDay.activeMatch.playerRatings.length >= 22, "European matches should include player ratings");
 
   const dailySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 7777 });
   const dailyClub = Engine.getClub(dailySave, dailySave.activeClubId);
@@ -377,6 +399,9 @@ function run() {
   simulateSeason(save);
   const history = save.league.history[0];
   assert.ok(history.cup && history.cup.championName, "Completed seasons should archive the domestic cup winner");
+  assert.ok(history.europe && history.europe.championName, "Completed seasons should archive the European winner");
+  assert.ok(save.europe && save.europe.competition && save.europe.competition.season === save.season, "Rollover should create the next European competition");
+  assert.ok(save.europe.qualifiedClubIds.length >= 4, "Rollover should store next-season European qualifiers");
   assert.equal(history.fixtures.length, 38, "Completed season should archive all rounds");
   assert.equal(history.fixtures.reduce((sum, round) => sum + round.fixtures.length, 0), 380, "Completed season should archive all fixtures");
   assert.ok(history.standings[0].points >= 64 && history.standings[0].points <= 98, "Champion points should be plausible");

@@ -232,6 +232,19 @@ Design target:
 - Weekly season simulation now waits for pending cup fixtures before season rollover.
 - Regression tests cover board migration, board reports, cup migration, cup creation, active cup matches, knockout winners, and cup history archives.
 
+### European Qualification + Continental Competition
+
+- New saves and migrated saves now include a Continental Cup state with a virtual European club pool outside the Premier League table.
+- The first season seeds Premier League qualifiers from club reputation; future seasons qualify clubs from league finish plus domestic cup achievement.
+- Continental Cup format is two four-team groups, then semi-finals and a final.
+- European fixtures use the full match engine, so live score, scorers, assists, player ratings, xG, events, injuries, and match analysis all work.
+- European matchdays are integrated into next-fixture lookup, training calendars, day-by-day simulation, matchday reports, player stats, fitness, manager record, and season rollover.
+- European games award prize money and add travel fatigue on top of normal match fatigue.
+- Board reports now add a European Campaign objective for qualified clubs.
+- Dashboard now shows a Europe KPI, Match Day shows the Continental Cup panel, Manager shows a Continental Cup report with group table, and season history archives European winners.
+- Rollover creates the next season's Continental Cup draw from the completed league/cup outcomes.
+- Regression tests cover European migration, competition creation, daily European live matches, player ratings, season archives, and next-season qualifier storage.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
@@ -246,24 +259,25 @@ Design target:
 - `c0e3763` Fix rating potentials and profile labels
 - `bccc3c9` Add staff room and tactical roles
 - `b09c4c0` Add board objectives and domestic cup
+- Current session: Add European qualification and Continental Cup
 
-The latest completed feature phase is Board Objectives + Cup Competitions.
+The latest completed feature phase is European Qualification + Continental Competition.
 
 ## Current Roadmap
 
-### Next Phase: European Qualification + Continental Competition
+### Next Phase: Youth Loans + Pathway Promises
 
 Planned work:
 
-- European qualification from league finish and cup/league achievements.
-- Continental group/knockout competition for qualified clubs in the following season.
-- Coefficient/reputation rewards, prize money, squad rotation pressure, and travel fatigue.
-- European fixtures integrated into daily calendar, training load, next fixture, live match, and history.
-- Board objectives and media stories that react to European progress.
+- User-controlled youth loans for academy graduates and fringe prospects.
+- Loan destination fit based on playing time, level, tactical role, development focus, and club reputation.
+- Pathway promises when promoting academy prospects or negotiating with young players.
+- Promise tracking for minutes, squad role, loan pathway, training plan, and tactical-role development.
+- Inbox stories for loan progress, promise risk, promise kept, and promise broken.
+- Season rollover development effects from successful or poor loan spells.
 
 ### Later Phases
 
-- Youth loans and pathway promises.
 - Individual player instructions tied to tactical roles and match engine phases.
 - Inbox stories for staff advice, tactical concerns, and role-development milestones.
 - Save versioning and migration tests for more old-save shapes.

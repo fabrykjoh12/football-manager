@@ -291,6 +291,7 @@
     const next = Engine.getNextFixture(state, club.id);
     const board = Engine.boardReport(state);
     const cup = Engine.domesticCupReport(state);
+    const europe = Engine.europeanReport(state);
     const daysToNext = next && state.calendar ? Math.max(0, Engine.daysBetween(state.calendar.currentDate, next.date)) : null;
     const activeRow = table.find((row) => row.clubId === club.id);
     const squad = Engine.clubPlayers(state, club.id);
@@ -304,7 +305,7 @@
         <div class="hero-copy">
           <div class="eyebrow">Club control room</div>
           <h2>${escapeHtml(club.name)}</h2>
-          <p>${next ? `Next up: ${escapeHtml(nextFixtureLabel(next))}.` : "The season is complete."} Keep the board close, rotate through cup weeks, and protect the wage structure across the long save.</p>
+          <p>${next ? `Next up: ${escapeHtml(nextFixtureLabel(next))}.` : "The season is complete."} Keep the board close, rotate through cup and European weeks, and protect the wage structure across the long save.</p>
         </div>
         <div class="hero-kpis">
           <div class="hero-kpi"><span>Position</span><strong>${activeRow ? ordinal(rank) : "-"}</strong></div>
@@ -318,6 +319,7 @@
         ${metric("League Position", activeRow ? ordinal(rank) : "-", `${activeRow ? activeRow.points : 0} points`)}
         ${metric("Board Confidence", `${board.confidence}/100`, board.status.label)}
         ${metric("Cup Run", cup.activeEliminated ? "Eliminated" : cup.championClubId === club.id ? "Winners" : cup.bestRoundLabel, cup.nextFixture ? nextFixtureLabel(cup.nextFixture) : cup.championName || "Awaiting draw")}
+        ${metric("Europe", europe.activeQualified ? europe.activeStage : "Not Qualified", europe.nextFixture ? nextFixtureLabel(europe.nextFixture) : europe.championName || "Qualification race")}
       </div>
       <div class="grid three" style="margin-top:14px">
         <div class="panel">
@@ -1070,7 +1072,9 @@
     const next = Engine.getNextFixture(state, club.id);
     const roundData = state.league.schedule[state.league.currentRound] || state.league.schedule[state.league.schedule.length - 1];
     const cup = Engine.domesticCupReport(state);
-    const cupRound = visibleCupRound(cup);
+    const europe = Engine.europeanReport(state);
+    const cupRound = visibleCompetitionRound(cup);
+    const europeRound = visibleCompetitionRound(europe);
     const match = ui.liveMatch || state.lastMatch;
     const commentary = ui.liveMatch ? (ui.liveMatch.commentary || []).slice(0, ui.commentaryCount) : match ? (match.commentary || []) : [];
     const minute = match ? liveMatchMinute(match, commentary) : 0;
@@ -1100,24 +1104,40 @@
           </div>
         </div>
       </div>
-      <div class="panel section-gap">
-        <div class="ratings-heading">
-          <h2 class="panel-title">${escapeHtml(cup.name)}</h2>
-          <span class="pill ${cup.activeEliminated ? "amber" : cup.championClubId === club.id ? "green" : "blue"}">${cup.activeEliminated ? "Eliminated" : cup.status === "complete" ? `${escapeHtml(cup.championName || "Complete")} winners` : cup.bestRoundLabel}</span>
+      <div class="grid two section-gap">
+        <div class="panel">
+          <div class="ratings-heading">
+            <h2 class="panel-title">${escapeHtml(cup.name)}</h2>
+            <span class="pill ${cup.activeEliminated ? "amber" : cup.championClubId === club.id ? "green" : "blue"}">${cup.activeEliminated ? "Eliminated" : cup.status === "complete" ? `${escapeHtml(cup.championName || "Complete")} winners` : cup.bestRoundLabel}</span>
+          </div>
+          ${cupRound ? `
+            <div class="fixture-date" style="margin-bottom:10px">${escapeHtml(cupRound.label)} | ${escapeHtml(Engine.formatGameDate(cupRound.date))}</div>
+            <div class="match-strip">${cupRound.fixtures.map(renderFixture).join("")}</div>
+          ` : `<div class="empty-state">No cup fixtures drawn.</div>`}
         </div>
-        ${cupRound ? `
-          <div class="fixture-date" style="margin-bottom:10px">${escapeHtml(cupRound.label)} | ${escapeHtml(Engine.formatGameDate(cupRound.date))}</div>
-          <div class="match-strip">${cupRound.fixtures.map(renderFixture).join("")}</div>
-        ` : `<div class="empty-state">No cup fixtures drawn.</div>`}
+        <div class="panel">
+          <div class="ratings-heading">
+            <h2 class="panel-title">${escapeHtml(europe.name)}</h2>
+            <span class="pill ${europe.activeEliminated ? "amber" : europe.championClubId === club.id ? "green" : "blue"}">${europe.activeQualified ? europe.activeStage : "Not Qualified"}</span>
+          </div>
+          ${europeRound ? `
+            <div class="fixture-date" style="margin-bottom:10px">${escapeHtml(europeRound.label)} | ${escapeHtml(Engine.formatGameDate(europeRound.date))}</div>
+            <div class="match-strip">${europeRound.fixtures.map(renderFixture).join("")}</div>
+          ` : `<div class="empty-state">No European fixtures drawn.</div>`}
+        </div>
       </div>
       ${match ? `<div class="grid two" style="margin-top:14px">${renderMatchStats(match)}${renderRatings(match, visibleGoals)}</div>${renderMatchAnalysis(match)}` : ""}
     `;
   }
 
   function visibleCupRound(cup) {
-    if (!cup || !cup.rounds) return null;
-    return cup.rounds.find((round) => round.fixtures.length && round.fixtures.some((fixture) => !fixture.played)) ||
-      cup.rounds.slice().reverse().find((round) => round.fixtures.length) ||
+    return visibleCompetitionRound(cup);
+  }
+
+  function visibleCompetitionRound(report) {
+    if (!report || !report.rounds) return null;
+    return report.rounds.find((round) => round.fixtures.length && round.fixtures.some((fixture) => !fixture.played)) ||
+      report.rounds.slice().reverse().find((round) => round.fixtures.length) ||
       null;
   }
 
@@ -1568,6 +1588,7 @@
     const total = state.manager.wins + state.manager.draws + state.manager.losses;
     const board = Engine.boardReport(state);
     const cup = Engine.domesticCupReport(state);
+    const europe = Engine.europeanReport(state);
     return `
       <div class="grid four">
         ${metric("Reputation", state.manager.reputation, "Manager profile")}
@@ -1575,7 +1596,7 @@
         ${metric("Board Confidence", `${board.confidence}/100`, board.status.label)}
         ${metric("Win Rate", managerWinRate(), `${state.manager.goalsFor}:${state.manager.goalsAgainst} goals | ${total} matches`)}
       </div>
-      <div class="grid two" style="margin-top:14px">
+      <div class="grid three" style="margin-top:14px">
         <div class="panel">
           <div class="ratings-heading">
             <h2 class="panel-title">Board Objectives</h2>
@@ -1589,6 +1610,13 @@
             <span class="pill ${cup.activeEliminated ? "amber" : cup.championClubId === state.activeClubId ? "green" : "blue"}">${cup.status === "complete" ? "Complete" : "Active"}</span>
           </div>
           ${renderCupReport(cup)}
+        </div>
+        <div class="panel">
+          <div class="ratings-heading">
+            <h2 class="panel-title">${escapeHtml(europe.name)}</h2>
+            <span class="pill ${europe.activeEliminated ? "amber" : europe.championClubId === state.activeClubId ? "green" : "blue"}">${europe.activeQualified ? europe.activeStage : "Not Qualified"}</span>
+          </div>
+          ${renderEuropeanReport(europe)}
         </div>
       </div>
       <div class="panel" style="margin-top:14px">
@@ -1628,7 +1656,7 @@
   }
 
   function renderCupReport(cup) {
-    const round = visibleCupRound(cup);
+    const round = visibleCompetitionRound(cup);
     return `
       <div class="metric-grid">
         ${metric("Status", cup.activeEliminated ? "Eliminated" : cup.championClubId === state.activeClubId ? "Winners" : cup.status === "complete" ? "Complete" : "Alive", cup.championName ? `${cup.championName} holders` : cup.bestRoundLabel)}
@@ -1641,6 +1669,31 @@
             <span>${escapeHtml(Engine.formatGameDate(item.date))}<br><span class="small-muted">${item.fixtures.filter((fixture) => fixture.played).length}/${item.fixtures.length} played</span></span>
           </div>
         `).join("") || `<div class="empty-state">Cup draw pending.</div>`}
+      </div>
+      ${round && round.fixtures.length ? `<div class="match-strip" style="margin-top:12px">${round.fixtures.slice(0, 4).map(renderFixture).join("")}</div>` : ""}
+    `;
+  }
+
+  function renderEuropeanReport(europe) {
+    const round = visibleCompetitionRound(europe);
+    return `
+      <div class="metric-grid">
+        ${metric("Status", europe.activeQualified ? europe.activeStage : "Not Qualified", europe.championName ? `${europe.championName} holders` : `${europe.teams.length} clubs`)}
+        ${metric("Next European Tie", europe.nextFixture ? nextFixtureLabel(europe.nextFixture) : "-", europe.nextFixture ? Engine.formatGameDate(europe.nextFixture.date) : europe.activeEliminated ? "Campaign over" : "Awaiting draw")}
+        ${metric("Group", europe.activeGroup || "-", europe.activeQualified ? `${europe.progressScore}/100 campaign score` : "Qualify through league or cup")}
+      </div>
+      ${europe.activeGroupTable && europe.activeGroupTable.length ? `
+        <div style="margin-top:12px">
+          ${renderEuropeanGroupTable(europe.activeGroupTable)}
+        </div>
+      ` : ""}
+      <div class="timeline compact-timeline" style="margin-top:12px">
+        ${(europe.rounds || []).filter((item) => item.fixtures.length).map((item) => `
+          <div class="timeline-item">
+            <strong>${escapeHtml(item.label)}</strong>
+            <span>${escapeHtml(Engine.formatGameDate(item.date))}<br><span class="small-muted">${item.fixtures.filter((fixture) => fixture.played).length}/${item.fixtures.length} played</span></span>
+          </div>
+        `).join("") || `<div class="empty-state">European draw pending.</div>`}
       </div>
       ${round && round.fixtures.length ? `<div class="match-strip" style="margin-top:12px">${round.fixtures.slice(0, 4).map(renderFixture).join("")}</div>` : ""}
     `;
@@ -2023,7 +2076,7 @@
       const visibleGoals = visibleMatchGoals(ui.liveMatch, commentary, minute);
       const liveScore = liveMatchScore(ui.liveMatch, visibleGoals);
       score = `${liveScore.home}-${liveScore.away}`;
-    } else if (fixture.played && fixture.competitionType === "cup" && fixture.penalties) {
+    } else if (fixture.played && fixture.penalties) {
       score = `${score}p`;
     }
     const dateLabel = fixture.date ? `${fixture.competitionName ? `${fixture.competitionName} | ${fixture.roundName || ""} | ` : ""}${Engine.formatGameDate(fixture.date)}` : "";
@@ -2366,6 +2419,23 @@
     `;
   }
 
+  function renderEuropeanGroupTable(rows) {
+    return `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Club</th><th>P</th><th>GD</th><th>Pts</th></tr></thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr class="${row.clubId === state.activeClubId ? "highlight" : ""}">
+                <td>${row.position}</td><td>${escapeHtml(row.clubName)}</td><td>${row.played}</td><td>${row.goalDifference}</td><td><strong>${row.points}</strong></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
   function renderIncomingOffers(offers) {
     return `
       <div class="table-wrap">
@@ -2588,6 +2658,7 @@
           <span class="pill green">${escapeHtml(item.championName)} champions</span>
         </div>
         ${item.cup && item.cup.championName ? `<div class="message" style="margin-top:10px"><strong>${escapeHtml(item.cup.competitionName || "Domestic Cup")}</strong><br>${escapeHtml(item.cup.championName)} winners</div>` : ""}
+        ${item.europe && item.europe.championName ? `<div class="message" style="margin-top:10px"><strong>${escapeHtml(item.europe.competitionName || "Continental Cup")}</strong><br>${escapeHtml(item.europe.championName)} winners</div>` : ""}
         <div class="grid two" style="margin-top:10px">
           ${awardLine("Golden Boot", item.awards.goldenBoot)}
           ${awardLine("Playmaker", item.awards.playmaker)}
