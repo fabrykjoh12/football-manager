@@ -1261,6 +1261,91 @@ tr.highlight td {
   gap: 9px;
 }
 
+.staff-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.42fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.staff-departments-panel {
+  grid-row: span 2;
+}
+
+.staff-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.staff-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--panel-soft);
+}
+
+.staff-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.staff-card-head div {
+  min-width: 0;
+}
+
+.staff-card strong,
+.staff-card span,
+.staff-card p {
+  overflow-wrap: anywhere;
+}
+
+.staff-card-head strong {
+  display: block;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.staff-card-head span:not(.badge) {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 760;
+}
+
+.staff-card p {
+  min-height: 48px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.level-dots {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.level-dots span {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel-muted);
+}
+
+.level-dots span.filled {
+  background: var(--accent);
+}
+
 .training-calendar {
   display: grid;
   gap: 8px;
@@ -1425,6 +1510,89 @@ tr.highlight td {
 .tactical-preview {
   display: grid;
   gap: 10px;
+}
+
+.tactical-roles-panel {
+  grid-column: 1 / -1;
+}
+
+.role-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.34fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.role-table {
+  display: grid;
+  gap: 8px;
+}
+
+.role-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(190px, 0.36fr) minmax(120px, 0.22fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--panel-soft);
+}
+
+.role-player {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.role-player strong,
+.role-player small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.role-player strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.role-player small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 750;
+}
+
+.role-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.role-fit {
+  display: grid;
+  grid-template-columns: auto minmax(72px, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.role-sidebar {
+  display: grid;
+  gap: 9px;
 }
 
 .fixture.mini {
@@ -2869,6 +3037,18 @@ tr.highlight td {
   font-size: 12px;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .right {
   text-align: right;
 }
@@ -2885,6 +3065,8 @@ tr.highlight td {
   .lineup-layout,
   .tactics-layout,
   .training-layout,
+  .staff-layout,
+  .role-layout,
   .squad-insights,
   .recruitment-layout,
   .transfer-window-panel,
@@ -2894,7 +3076,8 @@ tr.highlight td {
   }
 
   .tactics-layout .panel:first-child,
-  .training-calendar-panel {
+  .training-calendar-panel,
+  .staff-departments-panel {
     grid-row: auto;
   }
 
@@ -2917,6 +3100,18 @@ tr.highlight td {
 
   .region-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .staff-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .role-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .role-fit {
+    max-width: 220px;
   }
 }
 

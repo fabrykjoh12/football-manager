@@ -39,6 +39,7 @@
     ["lineup", "Lineup"],
     ["tactics", "Tactics"],
     ["training", "Training"],
+    ["staff", "Staff"],
     ["academy", "Academy"],
     ["match", "Match Day"],
     ["league", "League"],
@@ -216,6 +217,7 @@
       lineup: renderLineup,
       tactics: renderTactics,
       training: renderTraining,
+      staff: renderStaff,
       academy: renderAcademy,
       match: renderMatchDay,
       league: renderLeague,
@@ -249,6 +251,7 @@
       lineup: "Pick exactly 11 starters or let the staff select by role fit.",
       tactics: "Shape, intensity, risk, and attacking routes for the next match.",
       training: "Plan the week, manage load, and prepare for the next opponent.",
+      staff: "Upgrade departments that shape training, medical, analysis, and scouting.",
       academy: "Youth prospects, development plans, and first-team promotion.",
       match: "Continue through the calendar and review matchday reports.",
       league: "Table, goal difference, points, and recent form.",
@@ -270,7 +273,7 @@
       return `<button class="btn-primary" data-action="auto-lineup">Auto Select</button>`;
     }
     if (screen === "tactics") {
-      return `<button class="btn-primary" data-action="auto-tactics">Auto Match Plan</button>`;
+      return `<div class="screen-actions"><button class="btn-primary" data-action="auto-tactics">Auto Match Plan</button><button data-action="auto-roles">Auto Roles</button></div>`;
     }
     if (screen === "training") {
       return `<div class="screen-actions"><button class="btn-primary" data-action="auto-training">Auto Week</button><button class="btn-green" data-action="simulate-round" ${ui.commentaryPlaying ? "disabled" : ""}>Continue Day</button></div>`;
@@ -604,13 +607,14 @@
     const profile = Engine.tacticalProfile(club);
     const opponentProfile = opponent ? Engine.tacticalProfile(opponent) : null;
     const strength = Engine.teamStrength(state, club.id);
+    const roleReport = Engine.tacticalRoleReport(state, club.id);
 
     return `
       <div class="grid four">
         ${metric("Formation", club.formation || "-", `${Data.FORMATIONS[club.formation] ? Data.FORMATIONS[club.formation].join(" ") : "XI"}`)}
         ${metric("Mentality", tacticLabel("mentality", club.tactics && club.tactics.mentality), tacticLabel("pressing", club.tactics && club.tactics.pressing))}
         ${metric("Intensity", profile.intensity, profile.fatigue > 1 ? "High player load" : "Managed load")}
-        ${metric("Team Strength", round(strength.overall, 1), `${round(strength.attack, 1)} ATT | ${round(strength.defense, 1)} DEF`)}
+        ${metric("Role Fit", `${roleReport ? roleReport.averageFit : "-"}%`, roleReport && roleReport.weakFits.length ? `${roleReport.weakFits.length} weak fits` : `${round(strength.overall, 1)} team strength`)}
       </div>
       <div class="tactics-layout" style="margin-top:14px">
         <div class="panel">
@@ -636,6 +640,58 @@
         <div class="panel">
           <h2 class="panel-title">Next Opposition</h2>
           ${next && opponent ? renderTacticalPreview(club, opponent, profile, opponentProfile, next) : `<div class="empty-state">No upcoming fixture.</div>`}
+        </div>
+        <div class="panel tactical-roles-panel">
+          <div class="ratings-heading">
+            <h2 class="panel-title">Tactical Roles</h2>
+            <span class="pill ${roleReport && roleReport.averageFit >= 72 ? "green" : roleReport && roleReport.averageFit >= 58 ? "blue" : "amber"}">${roleReport ? roleReport.averageFit : "-"} avg fit</span>
+          </div>
+          ${roleReport ? renderTacticalRolesPanel(roleReport) : `<div class="empty-state">Role report unavailable.</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTacticalRolesPanel(report) {
+    return `
+      <div class="role-layout">
+        <div class="role-table">
+          ${report.slots.map((slot) => renderRoleSlot(slot)).join("")}
+        </div>
+        <div class="role-sidebar">
+          <div class="preview-row"><span>Formation</span><strong>${escapeHtml(report.formation)}</strong></div>
+          <div class="preview-row"><span>Attack Bias</span><strong>${round(report.phaseBias.attack || 0, 1)}</strong></div>
+          <div class="preview-row"><span>Midfield Bias</span><strong>${round(report.phaseBias.midfield || 0, 1)}</strong></div>
+          <div class="preview-row"><span>Defensive Bias</span><strong>${round(report.phaseBias.defense || 0, 1)}</strong></div>
+          ${report.weakFits.length ? `
+            <div class="message warn">
+              <strong>Role Mismatch</strong><br>
+              ${report.weakFits.slice(0, 3).map((slot) => `${escapeHtml(slot.playerName)} as ${escapeHtml(slot.roleLabel)}`).join("<br>")}
+            </div>
+          ` : `<div class="message good"><strong>Role Cohesion</strong><br>The current XI fits the assigned roles well.</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderRoleSlot(slot) {
+    const selectId = `role-${slot.slotIndex}`;
+    return `
+      <div class="role-row">
+        <div class="role-player">
+          <span class="role-index">${slot.slotIndex + 1}</span>
+          <div>
+            <strong>${escapeHtml(slot.playerName)}</strong>
+            <small>${positionBadge(slot.position)} ${escapeHtml(slot.description)}</small>
+          </div>
+        </div>
+        <label class="sr-only" for="${selectId}">Role for ${escapeAttr(slot.playerName)}</label>
+        <select id="${selectId}" data-action="set-tactical-role" data-slot-index="${slot.slotIndex}">
+          ${slot.options.map((option) => `<option value="${escapeAttr(option.key)}" ${option.key === slot.roleKey ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+        </select>
+        <div class="role-fit">
+          <span class="badge ${slot.tone}">${slot.fit}</span>
+          ${bar(slot.fit, slot.tone)}
         </div>
       </div>
     `;
@@ -752,6 +808,76 @@
             `).join("")}
           </div>
         ` : ""}
+      </div>
+    `;
+  }
+
+  function renderStaff() {
+    const club = activeClub();
+    const report = Engine.staffRoomReport(state, club.id);
+    if (!report) return `<div class="empty-state">Staff report unavailable.</div>`;
+    const strongest = report.departments.slice().sort((a, b) => b.level - a.level)[0];
+    const nextUpgrade = report.departments.filter((department) => !department.maxed).sort((a, b) => a.upgradeCost - b.upgradeCost)[0];
+
+    return `
+      <div class="grid four">
+        ${metric("Staff Level", report.averageLevel, strongest ? `${strongest.label} level ${strongest.level}` : "No departments")}
+        ${metric("Weekly Staff Cost", Engine.formatMoney(report.weeklyCost), "Operational overhead")}
+        ${metric("Balance", Engine.formatMoney(club.balance), nextUpgrade ? `${Engine.formatMoney(nextUpgrade.upgradeCost)} next upgrade` : "All departments maxed")}
+        ${metric("Prep Edge", `${Math.round((report.effects.familiarityMultiplier - 1) * 100)}%`, "Analysis familiarity modifier")}
+      </div>
+      <div class="staff-layout section-gap">
+        <div class="panel staff-departments-panel">
+          <div class="ratings-heading">
+            <h2 class="panel-title">Departments</h2>
+            <span class="pill blue">${report.departments.length} units</span>
+          </div>
+          <div class="staff-grid">
+            ${report.departments.map(renderStaffDepartment).join("")}
+          </div>
+        </div>
+        <div class="panel">
+          <h2 class="panel-title">Department Effects</h2>
+          <div class="effect-stack">
+            ${effectMeter("Training Growth", report.effects.coachingGrowthMultiplier * 82, `${Math.round((report.effects.coachingGrowthMultiplier - 1) * 100)}% modifier`)}
+            ${effectMeter("Medical Control", (2 - report.effects.injuryRiskMultiplier) * 78, `${Math.round((1 - report.effects.injuryRiskMultiplier) * 100)}% injury risk`)}
+            ${effectMeter("Match Prep Detail", report.effects.familiarityMultiplier * 78, `${Math.round((report.effects.familiarityMultiplier - 1) * 100)}% familiarity`)}
+            ${effectMeter("Scouting Speed", (2 - report.effects.scoutingDaysMultiplier) * 76, `${Math.round((1 - report.effects.scoutingDaysMultiplier) * 100)}% assignment days`)}
+          </div>
+        </div>
+        <div class="panel">
+          <h2 class="panel-title">Staff Recommendations</h2>
+          <div class="recommendation-list">
+            ${report.recommendations.map((item) => `
+              <div class="message ${item.tone === "red" ? "bad" : item.tone === "amber" ? "warn" : item.tone === "green" ? "good" : ""}">
+                <strong>${escapeHtml(item.title)}</strong><br>${escapeHtml(item.body)}
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderStaffDepartment(department) {
+    return `
+      <div class="staff-card">
+        <div class="staff-card-head">
+          <div>
+            <strong>${escapeHtml(department.label)}</strong>
+            <span>${escapeHtml(department.name)}</span>
+          </div>
+          <span class="badge ${department.level >= 4 ? "green" : department.level >= 3 ? "blue" : "amber"}">Lvl ${department.level}</span>
+        </div>
+        <div class="level-dots" aria-label="${escapeAttr(department.label)} level ${department.level}">
+          ${Array.from({ length: 5 }, (_, index) => `<span class="${index < department.level ? "filled" : ""}"></span>`).join("")}
+        </div>
+        <p>${escapeHtml(department.description)}</p>
+        <div class="preview-row"><span>Effect</span><strong>${escapeHtml(department.effect)}</strong></div>
+        <div class="preview-row"><span>Weekly Cost</span><strong>${Engine.formatMoney(department.weeklyCost)}</strong></div>
+        <button class="${department.maxed ? "" : "btn-primary"}" data-action="upgrade-staff" data-staff-key="${escapeAttr(department.key)}" ${department.maxed ? "disabled" : ""}>
+          ${department.maxed ? "Max Level" : `Upgrade ${Engine.formatMoney(department.upgradeCost)}`}
+        </button>
       </div>
     `;
   }
@@ -1286,7 +1412,7 @@
           <div class="region-card ${region.active ? "active" : ""}">
             <div>
               <strong>${escapeHtml(region.label)}</strong>
-              <span class="badge ${region.active ? "blue" : region.discoveries.length ? "green" : ""}">${region.active ? `${region.active.daysRemaining} days` : `${region.discoveries.length} finds`}</span>
+              <span class="badge ${region.active ? "blue" : region.discoveries.length ? "green" : ""}">${region.active ? `${Math.ceil(region.active.daysRemaining || 0)} days` : `${region.discoveries.length} finds`}</span>
             </div>
             <p>${escapeHtml(region.description)}</p>
             ${region.active ? `
@@ -2246,7 +2372,7 @@
                     </td>
                     <td><span class="badge blue">Region</span></td>
                     <td>${assignment.status === "active" ? `<span class="badge blue">Active</span>` : `<span class="badge green">Complete</span>`}</td>
-                    <td>${assignment.status === "active" ? `${assignment.daysRemaining || 0} days` : "-"}</td>
+                    <td>${assignment.status === "active" ? `${Math.ceil(assignment.daysRemaining || 0)} days` : "-"}</td>
                     <td>${bar(assignment.progress || (assignment.status === "complete" ? 100 : 0), assignment.status === "complete" ? "green" : "blue")}</td>
                   </tr>
                 `;
@@ -2258,7 +2384,7 @@
                   <td>${player ? playerNameButton(player) : "Unknown"}</td>
                   <td><span class="badge">Player</span></td>
                   <td>${assignment.status === "active" ? `<span class="badge blue">Active</span>` : `<span class="badge green">Complete</span>`}</td>
-                  <td>${assignment.status === "active" ? `${assignment.daysRemaining !== undefined ? assignment.daysRemaining : (assignment.roundsRemaining || 0) * 7} days` : "-"}</td>
+                  <td>${assignment.status === "active" ? `${Math.ceil(assignment.daysRemaining !== undefined ? assignment.daysRemaining : (assignment.roundsRemaining || 0) * 7)} days` : "-"}</td>
                   <td>${report ? `${report.confidence}%` : "0%"}</td>
                 </tr>
               `;
@@ -2619,8 +2745,22 @@
       render();
       return;
     }
+    if (action === "auto-roles") {
+      const result = Engine.autoSetTacticalRoles(state, state.activeClubId);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
     if (action === "auto-training") {
       const result = Engine.autoSetTrainingPlan(state, state.activeClubId);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (action === "upgrade-staff") {
+      const result = Engine.upgradeStaffDepartment(state, state.activeClubId, actionEl.dataset.staffKey);
       Storage.save(state);
       toast(result.message, result.ok ? "good" : "bad");
       render();
@@ -2785,6 +2925,13 @@
     }
     if (target.dataset.action === "set-tactic") {
       const result = Engine.setTactic(state, state.activeClubId, target.dataset.tacticKey, target.value);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (target.dataset.action === "set-tactical-role") {
+      const result = Engine.setTacticalRole(state, state.activeClubId, target.dataset.slotIndex, target.value);
       Storage.save(state);
       toast(result.message, result.ok ? "good" : "bad");
       render();

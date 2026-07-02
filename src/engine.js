@@ -3,7 +3,7 @@
 
   const Data = global.FMLData || (typeof require !== "undefined" ? require("./data.js") : null);
   const MatchEngine = global.FMLMatchEngine || (typeof require !== "undefined" ? require("./match-engine.js") : null);
-  const VERSION = "1.7.0";
+  const VERSION = "1.8.0";
   const BENCH_SIZE = 7;
   const BASE_SEASON_YEAR = 2026;
   const TRAINING_FOCUS = {
@@ -212,6 +212,173 @@
       wageMultiplier: 0.82,
       patience: 1.4,
       order: 1
+    }
+  };
+  const STAFF_DEPARTMENTS = {
+    assistant: {
+      label: "Assistant Manager",
+      description: "Daily advice, auto-selection quality, dressing-room read, and opponent preparation.",
+      baseCost: 900000,
+      weeklyCost: 18000
+    },
+    coaching: {
+      label: "Coaching Team",
+      description: "Technical work, player growth, match sharpness, and first-team training detail.",
+      baseCost: 1200000,
+      weeklyCost: 26000
+    },
+    medical: {
+      label: "Medical Team",
+      description: "Recovery planning, injury prevention, rehab quality, and availability management.",
+      baseCost: 1100000,
+      weeklyCost: 23000
+    },
+    analysis: {
+      label: "Analysis Unit",
+      description: "Match preparation, role reports, opposition insight, and tactical familiarity.",
+      baseCost: 950000,
+      weeklyCost: 16000
+    },
+    scouting: {
+      label: "Scouting Team",
+      description: "Assignment speed, confidence growth, regional coverage, and discovery reliability.",
+      baseCost: 1000000,
+      weeklyCost: 19000
+    }
+  };
+  const TACTICAL_ROLES = {
+    goalkeeper: {
+      label: "Goalkeeper",
+      description: "Holds position, protects the box, and keeps distribution simple.",
+      positions: ["GK"],
+      attributes: ["positioning", "decisions", "handling", "reflexes", "composure"],
+      phases: { keeper: 1, defense: 0.2 }
+    },
+    sweeperKeeper: {
+      label: "Sweeper Keeper",
+      description: "Higher starting position with more involvement in build-up.",
+      positions: ["GK"],
+      attributes: ["positioning", "decisions", "passing", "pace", "composure"],
+      phases: { keeper: 0.8, midfield: 0.35, defense: 0.1 }
+    },
+    fullBack: {
+      label: "Full Back",
+      description: "Balanced wide defender who supports attacks without leaving the back line exposed.",
+      positions: ["RB", "LB"],
+      attributes: ["tackling", "marking", "positioning", "stamina", "crossing", "pace"],
+      phases: { defense: 0.8, attack: 0.28, midfield: 0.1 }
+    },
+    wingBack: {
+      label: "Wing Back",
+      description: "Aggressive wide runner who stretches play and carries crossing threat.",
+      positions: ["RB", "LB"],
+      attributes: ["stamina", "pace", "crossing", "dribbling", "workRate", "tackling"],
+      phases: { attack: 0.7, midfield: 0.35, defense: -0.15 }
+    },
+    centreBack: {
+      label: "Centre Back",
+      description: "Primary box defender focused on duels, positioning, and clearances.",
+      positions: ["CB"],
+      attributes: ["tackling", "marking", "positioning", "heading", "strength", "concentration"],
+      phases: { defense: 0.95 }
+    },
+    ballPlayingDefender: {
+      label: "Ball-Playing Defender",
+      description: "Build-up defender who can progress possession from the back line.",
+      positions: ["CB"],
+      attributes: ["passing", "vision", "decisions", "composure", "positioning", "tackling"],
+      phases: { defense: 0.55, midfield: 0.55 }
+    },
+    stopper: {
+      label: "Stopper",
+      description: "Front-foot defender who attacks duels and breaks up direct play.",
+      positions: ["CB"],
+      attributes: ["strength", "aggression", "tackling", "heading", "bravery", "positioning"],
+      phases: { defense: 1.1, midfield: -0.1 }
+    },
+    anchor: {
+      label: "Anchor",
+      description: "Screens the centre backs and keeps the midfield structure stable.",
+      positions: ["DM"],
+      attributes: ["positioning", "marking", "tackling", "strength", "decisions", "concentration"],
+      phases: { defense: 0.85, midfield: 0.25 }
+    },
+    deepPlaymaker: {
+      label: "Deep Playmaker",
+      description: "Controls build-up tempo from deeper midfield zones.",
+      positions: ["DM", "CM"],
+      attributes: ["passing", "vision", "decisions", "composure", "firstTouch", "positioning"],
+      phases: { midfield: 0.85, defense: 0.2, attack: 0.12 }
+    },
+    boxToBox: {
+      label: "Box-to-Box",
+      description: "High-energy midfielder who contributes in both penalty areas.",
+      positions: ["CM", "DM"],
+      attributes: ["stamina", "workRate", "passing", "tackling", "offTheBall", "finishing"],
+      phases: { midfield: 0.65, attack: 0.3, defense: 0.25 }
+    },
+    ballWinner: {
+      label: "Ball Winner",
+      description: "Wins duels, presses loose touches, and protects transitions.",
+      positions: ["CM", "DM"],
+      attributes: ["tackling", "aggression", "workRate", "stamina", "marking", "bravery"],
+      phases: { midfield: 0.55, defense: 0.45 }
+    },
+    advancedPlaymaker: {
+      label: "Advanced Playmaker",
+      description: "Final-third connector who creates between the lines.",
+      positions: ["CM", "AM"],
+      attributes: ["passing", "vision", "firstTouch", "technique", "decisions", "composure"],
+      phases: { midfield: 0.75, attack: 0.5 }
+    },
+    winger: {
+      label: "Winger",
+      description: "Stretches wide, attacks full backs, and creates from crosses.",
+      positions: ["RW", "LW"],
+      attributes: ["pace", "acceleration", "crossing", "dribbling", "stamina", "workRate"],
+      phases: { attack: 0.7, midfield: 0.2 }
+    },
+    insideForward: {
+      label: "Inside Forward",
+      description: "Cuts inside to combine and attack shots from wide starting positions.",
+      positions: ["RW", "LW"],
+      attributes: ["finishing", "dribbling", "pace", "offTheBall", "composure", "firstTouch"],
+      phases: { attack: 0.9, midfield: -0.05 }
+    },
+    widePlaymaker: {
+      label: "Wide Playmaker",
+      description: "Comes inside from wide areas to connect possession and slide passes through.",
+      positions: ["RW", "LW", "AM"],
+      attributes: ["passing", "vision", "technique", "firstTouch", "decisions", "dribbling"],
+      phases: { midfield: 0.55, attack: 0.45 }
+    },
+    shadowStriker: {
+      label: "Shadow Striker",
+      description: "Arrives beyond the striker and attacks the box from central pockets.",
+      positions: ["AM", "ST"],
+      attributes: ["finishing", "offTheBall", "composure", "pace", "longShots", "decisions"],
+      phases: { attack: 0.8, midfield: 0.2 }
+    },
+    advancedForward: {
+      label: "Advanced Forward",
+      description: "Leads the line, runs in behind, and prioritises goal threat.",
+      positions: ["ST"],
+      attributes: ["finishing", "pace", "offTheBall", "composure", "firstTouch", "acceleration"],
+      phases: { attack: 1 }
+    },
+    pressingForward: {
+      label: "Pressing Forward",
+      description: "Starts the press, forces rushed passes, and keeps attacking pressure high.",
+      positions: ["ST"],
+      attributes: ["workRate", "stamina", "pace", "aggression", "finishing", "strength"],
+      phases: { attack: 0.65, midfield: 0.35, defense: 0.15 }
+    },
+    targetForward: {
+      label: "Target Forward",
+      description: "Occupies centre backs, wins aerials, and links direct attacks.",
+      positions: ["ST"],
+      attributes: ["heading", "jumping", "strength", "firstTouch", "composure", "finishing"],
+      phases: { attack: 0.75, midfield: 0.25 }
     }
   };
   const ACADEMY_PLANS = {
@@ -1523,6 +1690,7 @@
     state.league.clubs = Data.CLUB_TEMPLATES.map((template, index) => {
       const selected = template.id === selectedTemplateId;
       const clubName = selected && customName ? customName : template.name;
+      const formation = index % 3 === 0 ? "4-2-3-1" : index % 3 === 1 ? "4-3-3" : "4-4-2";
       const club = {
         id: selected && customName ? `club-${toId(customName) || "custom"}` : template.id,
         sourceTeamId: template.id,
@@ -1538,8 +1706,10 @@
         squad: [],
         lineup: [],
         bench: [],
-        formation: index % 3 === 0 ? "4-2-3-1" : index % 3 === 1 ? "4-3-3" : "4-4-2",
+        formation,
+        roleAssignments: defaultRoleAssignments(formation),
         tactics: defaultTactics(index),
+        staff: defaultStaffRoom(template, index),
         trainingPlan: "balanced",
         matchPrep: "balanced",
         matchPrepFamiliarity: defaultMatchPrepFamiliarity(),
@@ -1665,23 +1835,26 @@
     const club = getClub(state, clubId);
     if (!club) return [];
     const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
+    normalizeRoleAssignments(club);
     const players = clubPlayers(state, clubId).filter((player) => player.fitness > 18 && !isUnavailable(state, player));
     const selected = [];
-    formation.forEach((slot) => {
+    formation.forEach((slot, index) => {
+      const roleKey = club.roleAssignments[String(index)] || defaultRoleForSlot(slot);
       const available = players.filter((player) => !selected.includes(player.id));
       const exact = available
         .filter((player) => player.position === slot || player.secondaryPositions.includes(slot))
-        .sort((a, b) => playerPositionScore(b, slot) - playerPositionScore(a, slot));
-      const fallback = available.sort((a, b) => b.currentAbility - a.currentAbility);
+        .sort((a, b) => playerPositionScore(b, slot, roleKey) - playerPositionScore(a, slot, roleKey));
+      const fallback = available.sort((a, b) => playerPositionScore(b, slot, roleKey) - playerPositionScore(a, slot, roleKey));
       const player = exact[0] || fallback[0];
       if (player) selected.push(player.id);
     });
     return selected.slice(0, 11);
   }
 
-  function playerPositionScore(player, slot) {
+  function playerPositionScore(player, slot, roleKey) {
     const match = player.position === slot ? 8 : player.secondaryPositions.includes(slot) ? 3 : 0;
-    return player.currentAbility + match + player.fitness * 0.08 + player.sharpness * 0.04 + player.morale * 0.03;
+    const roleFit = roleKey ? playerRoleFit(player, roleKey, slot) : 62;
+    return player.currentAbility + match + (roleFit - 62) * 0.12 + player.fitness * 0.08 + player.sharpness * 0.04 + player.morale * 0.03;
   }
 
   function ensureLineup(state, clubId) {
@@ -1768,6 +1941,7 @@
     if (unique.length !== 11) {
       return { ok: false, message: "Select exactly 11 players." };
     }
+    normalizeRoleAssignments(club);
     club.lineup = unique;
     club.bench = ensureBench(state, clubId);
     return { ok: true, message: "Lineup saved." };
@@ -1790,6 +1964,7 @@
     const club = getClub(state, clubId);
     if (!club || !Data.FORMATIONS[formation]) return;
     club.formation = formation;
+    club.roleAssignments = defaultRoleAssignments(formation);
     club.lineup = autoSelectLineup(state, clubId);
     club.bench = autoSelectBench(state, clubId);
   }
@@ -1821,6 +1996,346 @@
       { tempo: "direct", width: "wide", focus: "flanks" }
     ];
     return normalizeTactics(variants[index % variants.length]);
+  }
+
+  function staffDepartmentKeys() {
+    return Object.keys(STAFF_DEPARTMENTS);
+  }
+
+  function staffDepartmentLabel(key) {
+    return STAFF_DEPARTMENTS[key] ? STAFF_DEPARTMENTS[key].label : key || "-";
+  }
+
+  function defaultStaffLevel(club, index, key) {
+    const reputation = club && Number.isFinite(club.reputation) ? club.reputation : 70;
+    const base = reputation >= 88 ? 5 : reputation >= 80 ? 4 : reputation >= 70 ? 3 : 2;
+    const bias = { assistant: 0, coaching: 0, medical: 0, analysis: -1, scouting: -1 }[key] || 0;
+    const rhythm = ((index || 0) + staffDepartmentKeys().indexOf(key)) % 5 === 0 ? 1 : 0;
+    return Math.round(clamp(base + bias + rhythm, 1, 5));
+  }
+
+  function defaultStaffName(key, level) {
+    const tier = ["Local", "League", "Senior", "Elite", "World-Class"][Math.round(clamp(level, 1, 5)) - 1];
+    return `${tier} ${staffDepartmentLabel(key)}`;
+  }
+
+  function defaultStaffRoom(club, index) {
+    return staffDepartmentKeys().reduce((staff, key) => {
+      const level = defaultStaffLevel(club, index, key);
+      staff[key] = {
+        level,
+        name: defaultStaffName(key, level)
+      };
+      return staff;
+    }, {});
+  }
+
+  function normalizeStaffRoom(club, index) {
+    if (!club) return null;
+    const current = club.staff || {};
+    const normalized = {};
+    staffDepartmentKeys().forEach((key) => {
+      const existing = current[key] || {};
+      const level = Math.round(clamp(Number(existing.level) || defaultStaffLevel(club, index, key), 1, 5));
+      normalized[key] = {
+        ...existing,
+        level,
+        name: existing.name || defaultStaffName(key, level)
+      };
+    });
+    club.staff = normalized;
+    return club.staff;
+  }
+
+  function staffDepartmentLevel(state, clubId, key) {
+    const club = getClub(state, clubId);
+    if (!club || !STAFF_DEPARTMENTS[key]) return 3;
+    normalizeStaffRoom(club, 0);
+    return club.staff[key].level;
+  }
+
+  function staffEffectsForClub(state, clubId) {
+    const club = getClub(state, clubId);
+    if (!club) {
+      return {
+        coachingGrowthMultiplier: 1,
+        sharpnessBonus: 0,
+        recoveryBonus: 0,
+        injuryRiskMultiplier: 1,
+        familiarityMultiplier: 1,
+        scoutingDaysMultiplier: 1,
+        scoutingConfidenceBonus: 0,
+        assistantInsight: 0
+      };
+    }
+    normalizeStaffRoom(club, 0);
+    const coaching = club.staff.coaching.level - 3;
+    const medical = club.staff.medical.level - 3;
+    const analysis = club.staff.analysis.level - 3;
+    const scouting = club.staff.scouting.level - 3;
+    const assistant = club.staff.assistant.level - 3;
+    return {
+      coachingGrowthMultiplier: round(clamp(1 + coaching * 0.045, 0.9, 1.12), 3),
+      sharpnessBonus: round(coaching * 0.16, 2),
+      recoveryBonus: round(medical * 0.22, 2),
+      injuryRiskMultiplier: round(clamp(1 - medical * 0.055, 0.82, 1.12), 3),
+      familiarityMultiplier: round(clamp(1 + analysis * 0.065, 0.9, 1.15), 3),
+      scoutingDaysMultiplier: round(clamp(1 - scouting * 0.055, 0.84, 1.12), 3),
+      scoutingConfidenceBonus: Math.round(clamp(scouting * 3, -5, 7)),
+      assistantInsight: Math.round(clamp(assistant * 5, -8, 10))
+    };
+  }
+
+  function staffUpgradeCost(club, key) {
+    const department = STAFF_DEPARTMENTS[key];
+    if (!club || !department) return 0;
+    normalizeStaffRoom(club, 0);
+    const level = club.staff[key].level;
+    if (level >= 5) return 0;
+    const reputationMultiplier = 0.86 + (club.reputation || 70) / 260;
+    return moneyRound(department.baseCost * (0.72 + level * 0.42) * reputationMultiplier);
+  }
+
+  function staffEffectSummary(key, effects) {
+    if (key === "coaching") {
+      const growth = Math.round((effects.coachingGrowthMultiplier - 1) * 100);
+      return `${growth >= 0 ? "+" : ""}${growth}% growth, ${effects.sharpnessBonus >= 0 ? "+" : ""}${effects.sharpnessBonus} sharpness`;
+    }
+    if (key === "medical") {
+      const risk = Math.round((1 - effects.injuryRiskMultiplier) * 100);
+      return `${risk >= 0 ? "-" : "+"}${Math.abs(risk)}% injury risk, ${effects.recoveryBonus >= 0 ? "+" : ""}${effects.recoveryBonus} recovery`;
+    }
+    if (key === "analysis") {
+      const familiarity = Math.round((effects.familiarityMultiplier - 1) * 100);
+      return `${familiarity >= 0 ? "+" : ""}${familiarity}% prep familiarity`;
+    }
+    if (key === "scouting") {
+      const speed = Math.round((1 - effects.scoutingDaysMultiplier) * 100);
+      return `${speed >= 0 ? "-" : "+"}${Math.abs(speed)}% assignment days, ${effects.scoutingConfidenceBonus >= 0 ? "+" : ""}${effects.scoutingConfidenceBonus} confidence`;
+    }
+    return `${effects.assistantInsight >= 0 ? "+" : ""}${effects.assistantInsight} staff insight`;
+  }
+
+  function staffRoomReport(state, clubId) {
+    const club = getClub(state, clubId);
+    if (!club) return null;
+    normalizeStaffRoom(club, 0);
+    const effects = staffEffectsForClub(state, clubId);
+    const departments = staffDepartmentKeys().map((key) => {
+      const info = STAFF_DEPARTMENTS[key];
+      const staff = club.staff[key];
+      return {
+        key,
+        label: info.label,
+        description: info.description,
+        level: staff.level,
+        name: staff.name,
+        maxed: staff.level >= 5,
+        upgradeCost: staffUpgradeCost(club, key),
+        weeklyCost: Math.round(info.weeklyCost * (0.62 + staff.level * 0.24)),
+        effect: staffEffectSummary(key, effects)
+      };
+    });
+    const recommendations = [];
+    if (club.staff.medical.level <= 2) recommendations.push({ tone: "amber", title: "Medical Capacity", body: "Upgrade medical support to protect fitness through congested weeks." });
+    if (club.staff.analysis.level <= 2) recommendations.push({ tone: "blue", title: "Analysis Detail", body: "A stronger analysis unit helps match prep familiarity and role reporting." });
+    if (club.staff.coaching.level <= 2) recommendations.push({ tone: "amber", title: "Training Quality", body: "Coaching upgrades improve growth and session sharpness over time." });
+    if (club.staff.scouting.level <= 2) recommendations.push({ tone: "blue", title: "Scouting Speed", body: "Scouting upgrades shorten assignments and improve report confidence." });
+    if (!recommendations.length) recommendations.push({ tone: "green", title: "Staff Room", body: "Department balance is strong. Target upgrades where your save strategy needs it most." });
+    return {
+      averageLevel: round(average(departments.map((department) => department.level)), 1),
+      weeklyCost: departments.reduce((total, department) => total + department.weeklyCost, 0),
+      departments,
+      effects,
+      recommendations
+    };
+  }
+
+  function upgradeStaffDepartment(state, clubId, key) {
+    const club = getClub(state, clubId);
+    if (!club || !STAFF_DEPARTMENTS[key]) return { ok: false, message: "Staff department unavailable." };
+    normalizeStaffRoom(club, 0);
+    if (club.staff[key].level >= 5) return { ok: false, message: `${staffDepartmentLabel(key)} is already world-class.` };
+    const cost = staffUpgradeCost(club, key);
+    const staff = club.staff[key];
+    if (club.balance < cost) return { ok: false, message: `Balance is too low. Upgrade costs ${formatMoney(cost)}.` };
+    club.balance = Math.max(0, club.balance - cost);
+    club.seasonFinance = club.seasonFinance || {};
+    club.seasonFinance.staffSpend = (club.seasonFinance.staffSpend || 0) + cost;
+    staff.level += 1;
+    staff.name = defaultStaffName(key, staff.level);
+    if (club.id === state.activeClubId) {
+      addInbox(state, "Staff Upgrade", `${staffDepartmentLabel(key)} upgraded to level ${staff.level} for ${formatMoney(cost)}.`);
+    }
+    return { ok: true, message: `${staffDepartmentLabel(key)} upgraded to level ${staff.level}.` };
+  }
+
+  function defaultRoleForSlot(position) {
+    const defaults = {
+      GK: "goalkeeper",
+      RB: "fullBack",
+      LB: "fullBack",
+      CB: "centreBack",
+      DM: "anchor",
+      CM: "boxToBox",
+      AM: "advancedPlaymaker",
+      RW: "winger",
+      LW: "winger",
+      ST: "advancedForward"
+    };
+    return defaults[position] || "boxToBox";
+  }
+
+  function tacticalRoleLabel(roleKey) {
+    return TACTICAL_ROLES[roleKey] ? TACTICAL_ROLES[roleKey].label : roleKey || "-";
+  }
+
+  function isRoleValidForPosition(roleKey, position) {
+    const role = TACTICAL_ROLES[roleKey];
+    return !!(role && role.positions.includes(position));
+  }
+
+  function roleOptionsForPosition(position) {
+    return Object.keys(TACTICAL_ROLES)
+      .filter((key) => isRoleValidForPosition(key, position))
+      .map((key) => ({ key, ...TACTICAL_ROLES[key] }));
+  }
+
+  function defaultRoleAssignments(formation) {
+    const slots = Data.FORMATIONS[formation] || Data.FORMATIONS["4-3-3"];
+    return slots.reduce((assignments, position, index) => {
+      assignments[String(index)] = defaultRoleForSlot(position);
+      return assignments;
+    }, {});
+  }
+
+  function normalizeRoleAssignments(club) {
+    if (!club) return {};
+    const slots = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
+    const current = club.roleAssignments || {};
+    const normalized = {};
+    slots.forEach((position, index) => {
+      const existing = current[String(index)];
+      normalized[String(index)] = isRoleValidForPosition(existing, position) ? existing : defaultRoleForSlot(position);
+    });
+    club.roleAssignments = normalized;
+    return club.roleAssignments;
+  }
+
+  function averageRoleAttributes(player, role) {
+    const values = (role.attributes || []).map((key) => player.attributes && Number(player.attributes[key])).filter(Number.isFinite);
+    return values.length ? average(values) : player.currentAbility || 50;
+  }
+
+  function playerRoleFit(player, roleKey, slot) {
+    const role = TACTICAL_ROLES[roleKey];
+    if (!player || !role) return 0;
+    const direct = role.positions.includes(player.position);
+    const secondary = (player.secondaryPositions || []).some((position) => role.positions.includes(position));
+    const bandFit = role.positions.some((position) => positionBand(position) === positionBand(player.position));
+    const slotBonus = slot ? -slotPenalty(player, slot) * 1.4 : 0;
+    const positionBonus = direct ? 8 : secondary ? 3 : bandFit ? -4 : player.position === "GK" || role.positions.includes("GK") ? -28 : -12;
+    const profile = averageRoleAttributes(player, role);
+    const availability = player.fitness * 0.035 + player.sharpness * 0.035 + player.morale * 0.015;
+    return Math.round(clamp(profile + positionBonus + slotBonus + availability - 5, 1, 100));
+  }
+
+  function roleFitTone(fit) {
+    if (fit >= 78) return "green";
+    if (fit >= 64) return "blue";
+    if (fit >= 50) return "amber";
+    return "red";
+  }
+
+  function rolePhaseBonus(player, roleKey, phase, slot) {
+    const role = TACTICAL_ROLES[roleKey];
+    if (!role || !role.phases || !role.phases[phase]) return 0;
+    const fit = playerRoleFit(player, roleKey, slot);
+    return role.phases[phase] * clamp(0.45 + fit / 85, 0.35, 1.55);
+  }
+
+  function bestTacticalRoleForPlayer(player, position) {
+    const options = roleOptionsForPosition(position);
+    if (!options.length) return defaultRoleForSlot(position);
+    return options
+      .slice()
+      .sort((a, b) => playerRoleFit(player, b.key, position) - playerRoleFit(player, a.key, position))[0].key;
+  }
+
+  function roleFitForSlot(state, club, slotIndex) {
+    if (!club) return null;
+    const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
+    const position = formation[slotIndex];
+    if (!position) return null;
+    normalizeRoleAssignments(club);
+    const lineup = ensureLineup(state, club.id);
+    const player = state.players[lineup[slotIndex]];
+    const roleKey = club.roleAssignments[String(slotIndex)] || defaultRoleForSlot(position);
+    const role = TACTICAL_ROLES[roleKey] || TACTICAL_ROLES[defaultRoleForSlot(position)];
+    const fit = player ? playerRoleFit(player, roleKey, position) : 0;
+    return {
+      slotIndex,
+      position,
+      roleKey,
+      roleLabel: role.label,
+      description: role.description,
+      playerId: player ? player.id : null,
+      playerName: player ? playerDisplayName(player) : "Empty",
+      fit,
+      tone: roleFitTone(fit),
+      options: roleOptionsForPosition(position)
+    };
+  }
+
+  function tacticalRoleReport(state, clubId) {
+    const club = getClub(state, clubId);
+    if (!club) return null;
+    normalizeRoleAssignments(club);
+    const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
+    const slots = formation.map((_, index) => roleFitForSlot(state, club, index)).filter(Boolean);
+    const weakFits = slots.filter((slot) => slot.fit < 58);
+    const phaseBias = slots.reduce((bias, slot) => {
+      const role = TACTICAL_ROLES[slot.roleKey];
+      Object.entries(role && role.phases ? role.phases : {}).forEach(([phase, value]) => {
+        bias[phase] = round((bias[phase] || 0) + value, 2);
+      });
+      return bias;
+    }, {});
+    return {
+      formation: club.formation,
+      averageFit: round(average(slots.map((slot) => slot.fit)), 1),
+      weakFits,
+      slots,
+      phaseBias
+    };
+  }
+
+  function setTacticalRole(state, clubId, slotIndex, roleKey) {
+    const club = getClub(state, clubId);
+    const index = Number(slotIndex);
+    if (!club || !Number.isInteger(index)) return { ok: false, message: "Tactical slot unavailable." };
+    const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
+    const position = formation[index];
+    if (!position || !isRoleValidForPosition(roleKey, position)) {
+      return { ok: false, message: "Role does not fit this position." };
+    }
+    normalizeRoleAssignments(club);
+    club.roleAssignments[String(index)] = roleKey;
+    return { ok: true, message: `${position} role set to ${tacticalRoleLabel(roleKey)}.` };
+  }
+
+  function autoSetTacticalRoles(state, clubId) {
+    const club = getClub(state, clubId);
+    if (!club) return { ok: false, message: "Club not found." };
+    const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
+    const lineup = ensureLineup(state, clubId);
+    const assignments = {};
+    formation.forEach((position, index) => {
+      const player = state.players[lineup[index]];
+      assignments[String(index)] = player ? bestTacticalRoleForPlayer(player, position) : defaultRoleForSlot(position);
+    });
+    club.roleAssignments = assignments;
+    return { ok: true, message: "Tactical roles matched to the current XI." };
   }
 
   function defaultMatchPrepFamiliarity() {
@@ -2043,23 +2558,24 @@
     const club = getClub(state, clubId);
     if (!club) return { attack: 50, midfield: 50, defense: 50, keeper: 50, overall: 50 };
     const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
+    normalizeRoleAssignments(club);
     const lineup = ensureLineup(state, clubId)
-      .map((id, index) => ({ player: state.players[id], slot: formation[index] }))
+      .map((id, index) => ({ player: state.players[id], slot: formation[index], roleKey: club.roleAssignments[String(index)] }))
       .filter((item) => item.player);
     const attackers = lineup.filter((item) => ["ST", "LW", "RW", "AM"].includes(item.slot));
     const midfielders = lineup.filter((item) => ["DM", "CM", "AM"].includes(item.slot));
     const defenders = lineup.filter((item) => ["RB", "LB", "CB", "DM"].includes(item.slot));
     const keepers = lineup.filter((item) => item.slot === "GK");
-    const attack = average((attackers.length ? attackers : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "attack")));
-    const midfield = average((midfielders.length ? midfielders : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "midfield")));
-    const defense = average((defenders.length ? defenders : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "defense")));
-    const keeper = average((keepers.length ? keepers : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "keeper")));
+    const attack = average((attackers.length ? attackers : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "attack", item.roleKey)));
+    const midfield = average((midfielders.length ? midfielders : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "midfield", item.roleKey)));
+    const defense = average((defenders.length ? defenders : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "defense", item.roleKey)));
+    const keeper = average((keepers.length ? keepers : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "keeper", item.roleKey)));
     const overall = attack * 0.28 + midfield * 0.28 + defense * 0.28 + keeper * 0.16;
     return { attack, midfield, defense, keeper, overall };
   }
 
-  function adjustedRoleScore(player, slot, role) {
-    return roleScore(player, role) - slotPenalty(player, slot);
+  function adjustedRoleScore(player, slot, role, tacticalRoleKey) {
+    return roleScore(player, role) - slotPenalty(player, slot) + rolePhaseBonus(player, tacticalRoleKey, role, slot);
   }
 
   function slotPenalty(player, slot) {
@@ -2140,12 +2656,13 @@
     }
     const club = getClub(state, player.clubId);
     const plan = club ? TRAINING_PLANS[club.trainingPlan] || TRAINING_PLANS.balanced : TRAINING_PLANS.balanced;
+    const staff = club ? staffEffectsForClub(state, club.id) : staffEffectsForClub(state, null);
     const individual = INDIVIDUAL_PLANS[player.individualPlan] || INDIVIDUAL_PLANS.normal;
     const resistance = averageExisting(player.attributes || {}, ["injuryResistance", "naturalFitness", "stamina"], 60);
     const fitnessRisk = player.fitness < 58 ? 36 : player.fitness < 72 ? 22 : player.fitness < 84 ? 10 : 3;
     const ageRisk = player.age >= 32 ? 14 : player.age <= 21 ? 6 : 0;
     const historyRisk = Math.min(12, (player.careerTotals && player.careerTotals.injuries || 0) * 3);
-    const workloadRisk = (plan.load || 1) * 8 * (individual.loadMultiplier || 1);
+    const workloadRisk = (plan.load || 1) * 8 * (individual.loadMultiplier || 1) * staff.injuryRiskMultiplier;
     const score = round(clamp(fitnessRisk + ageRisk + historyRisk + workloadRisk + (62 - resistance) * 0.45, 0, 100), 0);
     if (score >= 58) return { key: "high", label: "High", tone: "red", score, detail: "Reduce load or rest" };
     if (score >= 34) return { key: "medium", label: "Medium", tone: "amber", score, detail: "Monitor workload" };
@@ -2920,6 +3437,7 @@
     const currentDate = date || state.calendar.currentDate;
     const plan = TRAINING_PLANS[club && club.trainingPlan] || TRAINING_PLANS.balanced;
     const prep = MATCH_PREP[club && club.matchPrep] || MATCH_PREP.balanced;
+    const staff = staffEffectsForClub(state, clubId);
     const daysToNext = daysUntilNextFixture(state, clubId, currentDate);
     const daysSinceLast = daysSinceLastFixture(state, clubId, currentDate);
     const day = parseDate(currentDate).getUTCDay();
@@ -2964,12 +3482,13 @@
       prepKey: club ? club.matchPrep : "balanced",
       prepLabel: prep.label,
       load,
-      recovery: plan.recovery + recoveryBonus,
-      sharpness: plan.sharpness + prep.sharpness + sharpnessBonus,
+      recovery: plan.recovery + recoveryBonus + staff.recoveryBonus,
+      sharpness: plan.sharpness + prep.sharpness + sharpnessBonus + staff.sharpnessBonus,
       morale: plan.morale,
-      injuryRisk: plan.injuryRisk * injuryMultiplier,
-      growthRate: plan.growthRate * loadMultiplier,
-      familiarity: plan.familiarity * loadMultiplier + prep.familiarity * (daysToNext !== null && daysToNext <= 6 ? 1.35 : 0.75),
+      injuryRisk: plan.injuryRisk * injuryMultiplier * staff.injuryRiskMultiplier,
+      growthRate: plan.growthRate * loadMultiplier * staff.coachingGrowthMultiplier,
+      familiarity: (plan.familiarity * loadMultiplier + prep.familiarity * (daysToNext !== null && daysToNext <= 6 ? 1.35 : 0.75)) * staff.familiarityMultiplier,
+      staffEffects: staff,
       attributes: plan.attributes,
       daysToNext,
       daysSinceLast
@@ -3178,9 +3697,11 @@
         return;
       }
       assignment.daysRemaining = assignment.daysRemaining === undefined ? Math.max(7, (assignment.roundsRemaining || 3) * 7) : assignment.daysRemaining;
-      assignment.daysRemaining = Math.max(0, assignment.daysRemaining - 1);
+      const before = assignment.daysRemaining;
+      const staff = staffEffectsForClub(state, state.activeClubId);
+      assignment.daysRemaining = Math.max(0, assignment.daysRemaining - 1 / staff.scoutingDaysMultiplier);
       assignment.roundsRemaining = Math.ceil(assignment.daysRemaining / 7);
-      if (assignment.daysRemaining % 5 === 0 || assignment.daysRemaining === 0) {
+      if (Math.floor(before / 5) !== Math.floor(assignment.daysRemaining / 5) || assignment.daysRemaining === 0) {
         scoutPlayer(state, assignment.playerId, "assignment");
       }
       if (assignment.daysRemaining <= 0) {
@@ -4878,7 +5399,8 @@
       observedPotential: 0,
       notes: []
     };
-    const gain = mode === "assignment" ? randomInt(state, 10, 18) : randomInt(state, 18, 32);
+    const staff = staffEffectsForClub(state, state.activeClubId);
+    const gain = Math.max(4, (mode === "assignment" ? randomInt(state, 10, 18) : randomInt(state, 18, 32)) + staff.scoutingConfidenceBonus);
     existing.confidence = Math.round(clamp(existing.confidence + gain, 0, 100));
     const noise = (100 - existing.confidence) / 100;
     existing.observedAbility = Math.round(clamp(player.currentAbility + randomFloat(state, -18, 18) * noise, 1, 100));
@@ -5000,7 +5522,8 @@
     state.players[player.id] = player;
     if (!transfers.freeAgentIds.includes(player.id)) transfers.freeAgentIds.push(player.id);
 
-    const confidence = randomInt(state, 34, 62) + Math.round((scouting.network.level || 2) * 2);
+    const staff = staffEffectsForClub(state, state.activeClubId);
+    const confidence = randomInt(state, 34, 62) + Math.round((scouting.network.level || 2) * 2) + staff.scoutingConfidenceBonus;
     const report = {
       playerId: player.id,
       confidence: Math.round(clamp(confidence, 0, 100)),
@@ -5036,10 +5559,12 @@
 
   function advanceRegionalScoutingAssignment(state, assignment, days) {
     const region = SCOUTING_REGIONS[assignment.regionId] || SCOUTING_REGIONS.england;
+    const staff = staffEffectsForClub(state, state.activeClubId);
+    const effectiveDays = days / staff.scoutingDaysMultiplier;
     assignment.focus = SCOUTING_FOCUS[assignment.focus] ? assignment.focus : "balanced";
     assignment.daysTotal = assignment.daysTotal || region.days;
     const before = assignment.daysRemaining === undefined ? assignment.daysTotal : assignment.daysRemaining;
-    assignment.daysRemaining = Math.max(0, before - days);
+    assignment.daysRemaining = Math.max(0, before - effectiveDays);
     assignment.roundsRemaining = Math.ceil(assignment.daysRemaining / 7);
     assignment.progress = Math.round(clamp((assignment.daysTotal - assignment.daysRemaining) / Math.max(1, assignment.daysTotal) * 100, 0, 100));
     let discovery = null;
@@ -5073,6 +5598,8 @@
     if (!player) return { ok: false, message: "Player not found." };
     const active = state.scouting.assignments.find((assignment) => assignment.playerId === playerId && assignment.status === "active");
     if (active) return { ok: false, message: "This player is already being scouted." };
+    const staff = staffEffectsForClub(state, state.activeClubId);
+    const daysTotal = Math.max(8, Math.round(14 * staff.scoutingDaysMultiplier));
     const assignment = {
       id: `sa-${state.scouting.nextAssignmentId++}`,
       playerId,
@@ -5080,8 +5607,9 @@
       startedSeason: state.season,
       startedRound: state.league.currentRound + 1,
       startedDate: state.calendar ? state.calendar.currentDate : null,
-      roundsRemaining: 3,
-      daysRemaining: 14
+      roundsRemaining: Math.ceil(daysTotal / 7),
+      daysRemaining: daysTotal,
+      daysTotal
     };
     state.scouting.assignments.unshift(assignment);
     scoutPlayer(state, playerId, "assignment");
@@ -5095,6 +5623,8 @@
     const activeRegions = scouting.assignments.filter((assignment) => assignment.type === "region" && assignment.status === "active");
     if (activeRegions.length >= 3) return { ok: false, message: "All regional scouting slots are active." };
     if (activeRegions.some((assignment) => assignment.regionId === regionId)) return { ok: false, message: `${region.label} is already being scouted.` };
+    const staff = staffEffectsForClub(state, state.activeClubId);
+    const daysTotal = Math.max(8, Math.round(region.days * staff.scoutingDaysMultiplier));
     const assignment = {
       id: `sa-${scouting.nextAssignmentId++}`,
       type: "region",
@@ -5104,9 +5634,9 @@
       startedSeason: state.season,
       startedRound: state.league.currentRound + 1,
       startedDate: state.calendar ? state.calendar.currentDate : null,
-      roundsRemaining: Math.ceil(region.days / 7),
-      daysRemaining: region.days,
-      daysTotal: region.days,
+      roundsRemaining: Math.ceil(daysTotal / 7),
+      daysRemaining: daysTotal,
+      daysTotal,
       progress: 0,
       discoveries: []
     };
@@ -5124,8 +5654,9 @@
         return;
       }
       const report = scoutPlayer(state, assignment.playerId, "assignment");
+      const staff = staffEffectsForClub(state, state.activeClubId);
       assignment.roundsRemaining -= 1;
-      assignment.daysRemaining = assignment.daysRemaining === undefined ? Math.max(0, assignment.roundsRemaining * 7) : Math.max(0, assignment.daysRemaining - 7);
+      assignment.daysRemaining = assignment.daysRemaining === undefined ? Math.max(0, assignment.roundsRemaining * 7) : Math.max(0, assignment.daysRemaining - 7 / staff.scoutingDaysMultiplier);
       if (assignment.roundsRemaining <= 0) {
         assignment.status = "complete";
         assignment.completedSeason = state.season;
@@ -5621,6 +6152,8 @@
       club.formation = Data.FORMATIONS[club.formation] ? club.formation : index % 3 === 0 ? "4-2-3-1" : index % 3 === 1 ? "4-3-3" : "4-4-2";
       club.tactics = normalizeTactics(club.tactics);
       normalizeTrainingSetup(club);
+      normalizeStaffRoom(club, index);
+      normalizeRoleAssignments(club);
       club.lineup = club.lineup || [];
       club.bench = club.bench || [];
     });
@@ -5700,6 +6233,8 @@
     ACADEMY_PLANS,
     SCOUTING_REGIONS,
     SCOUTING_FOCUS,
+    STAFF_DEPARTMENTS,
+    TACTICAL_ROLES,
     DEFAULT_TACTICS,
     trainingFocusLabel,
     trainingPlanLabel,
@@ -5720,6 +6255,17 @@
     scoutingRegionLabel,
     scoutingNetworkReport,
     scoutingDiscoveryPlayers,
+    staffDepartmentLabel,
+    staffDepartmentLevel,
+    staffRoomReport,
+    upgradeStaffDepartment,
+    staffEffectsForClub,
+    roleOptionsForPosition,
+    tacticalRoleLabel,
+    playerRoleFit,
+    tacticalRoleReport,
+    setTacticalRole,
+    autoSetTacticalRoles,
     playerHappinessReport,
     squadHappinessReport,
     contractRenewalProfile,

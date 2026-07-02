@@ -206,6 +206,19 @@ Design target:
 - Scouting screen now includes network metrics, region cards, assignment progress, discoveries, reports, and target actions.
 - Regression tests cover academy migration, academy plans, promotion, regional scouting, discoveries, and market integration.
 
+### Staff Room + Tactical Roles
+
+- New saves and migrated saves now include a staff room for assistant manager, coaching, medical, analysis, and scouting departments.
+- Staff department quality now affects training growth, match sharpness, recovery, injury-risk control, match-prep familiarity, scouting speed, and scout confidence.
+- Staff upgrades spend club balance, create inbox messages, update department level/name, and are covered by regression tests.
+- New Staff screen shows department cards, level dots, weekly staff cost, upgrade actions, department effects, and recommendations.
+- Clubs now store tactical role assignments for every formation slot.
+- Tactical role fit uses player attributes, natural/secondary positions, availability, and formation slot fit.
+- Auto lineup selection now considers tactical-role fit as well as position, ability, fitness, sharpness, and morale.
+- Team strength and match simulation now receive tactical-role phase bonuses for attack, midfield, defense, and keeper strength.
+- Tactics screen now includes a Tactical Roles panel with 11 role selectors, player fit scores, phase bias, weak-fit warnings, and Auto Roles.
+- Regression tests cover staff migration, staff upgrades, role migration, tactical role reports, role edits, and auto role assignment.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
@@ -218,28 +231,28 @@ Design target:
 - `ede7f0a` Add contracts and morale systems
 - `298e0b9` Add youth academy and scouting network
 - `c0e3763` Fix rating potentials and profile labels
+- `e20dd82` Add staff room and tactical roles
 
-The latest completed feature phase is Youth Academy + Scouting Network.
+The latest completed feature phase is Staff Room + Tactical Roles.
 
 ## Current Roadmap
 
-### Next Phase: Staff Room + Tactical Roles
+### Next Phase: Board Objectives + Cup Competitions
 
 Planned work:
 
-- Staff room screen for coaches, scouts, analysts, physios, and assistant manager.
-- Staff quality affecting training growth, injury prevention, scouting speed, and match preparation.
-- Hiring, wage costs, and staff recommendations.
-- Player tactical roles and role familiarity inside formations.
-- Individual player instructions tied to tactics and match engine phases.
-- Inbox stories for staff advice, tactical concerns, and role-development milestones.
+- Board objectives for league finish, youth development, finances, wage control, transfers, and playing style.
+- Manager confidence/job security that reacts to form, finances, objectives, morale, and supporter pressure.
+- Domestic cup competition with draw, fixtures, rotation pressure, prize money, and matchday stories.
+- Cup fixtures integrated into the daily calendar, training load, player fatigue, and squad rotation advice.
+- Board and media inbox stories for milestones, derby games, cup upsets, and objective reviews.
 
 ### Later Phases
 
-- Cup competitions.
 - European qualification.
-- Board objectives and manager job security.
 - Youth loans and pathway promises.
+- Individual player instructions tied to tactical roles and match engine phases.
+- Inbox stories for staff advice, tactical concerns, and role-development milestones.
 - Save versioning and migration tests for more old-save shapes.
 - Better mobile layout QA.
 
