@@ -1346,6 +1346,50 @@ tr.highlight td {
   background: var(--accent);
 }
 
+.objective-list {
+  display: grid;
+  gap: 9px;
+}
+
+.objective-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.32fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--panel-soft);
+}
+
+.objective-row strong,
+.objective-row span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.objective-row strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.objective-row span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.objective-progress {
+  display: grid;
+  grid-template-columns: auto minmax(70px, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
 .training-calendar {
   display: grid;
   gap: 8px;
@@ -3112,6 +3156,14 @@ tr.highlight td {
 
   .role-fit {
     max-width: 220px;
+  }
+
+  .objective-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .objective-progress {
+    max-width: 240px;
   }
 }
 

@@ -86,10 +86,14 @@ function run() {
   delete legacySave.league.clubs[0].tactics;
   delete legacySave.league.clubs[0].staff;
   delete legacySave.league.clubs[0].roleAssignments;
+  delete legacySave.board;
+  delete legacySave.cups;
   const migratedLegacy = Engine.migrateState(legacySave);
   assert.equal(migratedLegacy.league.clubs[0].tactics.focus, "mixed", "Migration should backfill club tactics");
   assert.ok(migratedLegacy.league.clubs[0].staff.coaching, "Migration should backfill staff departments");
   assert.equal(Object.keys(migratedLegacy.league.clubs[0].roleAssignments).length, 11, "Migration should backfill tactical roles");
+  assert.ok(migratedLegacy.board && migratedLegacy.board.objectives.league, "Migration should backfill board objectives");
+  assert.ok(migratedLegacy.cups && migratedLegacy.cups.domestic.rounds.length > 0, "Migration should backfill domestic cup state");
   assert.ok(migratedLegacy.academy.prospects.length > 0, "Migration should backfill academy state");
   assert.equal(migratedLegacy.players[saka.id].potential, 90, "Migration should reapply matched player potentials");
 
@@ -108,6 +112,13 @@ function run() {
   assert.equal(activeClub.bench.some((id) => activeClub.lineup.includes(id)), false, "Bench should not overlap the starting XI");
   assert.equal(activeClub.trainingPlan, "balanced", "New saves should include a weekly training plan");
   assert.equal(activeClub.matchPrep, "balanced", "New saves should include match preparation");
+  assert.ok(save.board && save.board.objectives.league, "New saves should include board objectives");
+  const board = Engine.boardReport(save);
+  assert.equal(board.objectives.length, 6, "Board reports should include all core objectives");
+  assert.ok(board.confidence >= 1 && board.confidence <= 100, "Board confidence should be scored");
+  const cup = Engine.domesticCupReport(save);
+  assert.equal(cup.rounds.length, Engine.DOMESTIC_CUP_ROUNDS.length, "Domestic cup should include all configured rounds");
+  assert.equal(cup.rounds[0].fixtures.length, 4, "Domestic cup should start with four play-off ties");
   assert.ok(activeClub.staff && activeClub.staff.coaching, "New saves should include staff departments");
   const staffReport = Engine.staffRoomReport(save, activeClub.id);
   assert.equal(staffReport.departments.length, Object.keys(Engine.STAFF_DEPARTMENTS).length, "Staff reports should include every department");
@@ -214,6 +225,19 @@ function run() {
   const discovered = networkReport.discoveries[0].player;
   assert.ok(discovered && !discovered.clubId, "Scouting discoveries should enter the game as unsigned targets");
   assert.ok(networkSave.transfers.marketIds.includes(discovered.id), "Scouting discoveries should appear in the transfer market");
+
+  const cupSave = Engine.createNewSave({ selectedClubId: "pl-bur", seed: 5151 });
+  let cupMatchDay = null;
+  for (let i = 0; i < 130; i += 1) {
+    const day = Engine.simulateNextDay(cupSave);
+    if (day.activeMatch && day.activeMatch.competitionType === "cup") {
+      cupMatchDay = day;
+      break;
+    }
+  }
+  assert.ok(cupMatchDay && cupMatchDay.activeMatch, "Daily progression should surface active domestic cup matches");
+  assert.ok(cupMatchDay.activeMatch.winnerClubId, "Cup matches should resolve a knockout winner");
+  assert.ok(Engine.domesticCupReport(cupSave).bestRoundIndex >= 0, "Domestic cup reports should track the active club cup run");
 
   const dailySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 7777 });
   const dailyClub = Engine.getClub(dailySave, dailySave.activeClubId);
@@ -352,6 +376,7 @@ function run() {
 
   simulateSeason(save);
   const history = save.league.history[0];
+  assert.ok(history.cup && history.cup.championName, "Completed seasons should archive the domestic cup winner");
   assert.equal(history.fixtures.length, 38, "Completed season should archive all rounds");
   assert.equal(history.fixtures.reduce((sum, round) => sum + round.fixtures.length, 0), 380, "Completed season should archive all fixtures");
   assert.ok(history.standings[0].points >= 64 && history.standings[0].points <= 98, "Champion points should be plausible");

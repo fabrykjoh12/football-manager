@@ -3,7 +3,7 @@
 
   const Data = global.FMLData || (typeof require !== "undefined" ? require("./data.js") : null);
   const MatchEngine = global.FMLMatchEngine || (typeof require !== "undefined" ? require("./match-engine.js") : null);
-  const VERSION = "1.8.0";
+  const VERSION = "1.9.0";
   const BENCH_SIZE = 7;
   const BASE_SEASON_YEAR = 2026;
   const TRAINING_FOCUS = {
@@ -525,6 +525,21 @@
     line: "standard",
     focus: "mixed"
   };
+  const DOMESTIC_CUP_ROUNDS = [
+    { key: "playoff", label: "Third Round Play-Off", date: [9, 22], prize: 450000 },
+    { key: "round16", label: "Round of 16", date: [10, 27], prize: 700000 },
+    { key: "quarterFinal", label: "Quarter-Final", date: [1, 13], prize: 1100000 },
+    { key: "semiFinal", label: "Semi-Final", date: [3, 10], prize: 1800000 },
+    { key: "final", label: "Final", date: [5, 16], prize: 3200000 }
+  ];
+  const BOARD_OBJECTIVE_WEIGHTS = {
+    league: 36,
+    cup: 18,
+    finance: 16,
+    wages: 14,
+    youth: 8,
+    style: 8
+  };
   const RATING_MODEL_VERSION = 4;
 
   function clamp(value, min, max) {
@@ -534,6 +549,12 @@
   function round(value, precision) {
     const factor = Math.pow(10, precision || 0);
     return Math.round(value * factor) / factor;
+  }
+
+  function ordinalNumber(value) {
+    const number = Number(value) || 0;
+    const suffix = number % 10 === 1 && number % 100 !== 11 ? "st" : number % 10 === 2 && number % 100 !== 12 ? "nd" : number % 10 === 3 && number % 100 !== 13 ? "rd" : "th";
+    return `${number}${suffix}`;
   }
 
   function random(state) {
@@ -733,6 +754,20 @@
         lastEventDay: -999,
         lastIntakeSeason: 0
       },
+      board: {
+        clubId: null,
+        confidence: 64,
+        status: "stable",
+        objectives: {},
+        youthPromotions: 0,
+        lastReviewDay: -999,
+        lastConfidence: 64,
+        reviews: []
+      },
+      cups: {
+        domestic: null,
+        history: []
+      },
       transfers: {
         marketIds: [],
         offers: [],
@@ -806,6 +841,434 @@
       delete state.academy._creatingIntake;
     }
     return state.academy;
+  }
+
+  function leagueObjectiveForClub(club) {
+    const reputation = club ? club.reputation || 70 : 70;
+    if (reputation >= 90) return { targetPosition: 4, label: "Qualify for Europe", description: "Finish in the top four and stay in the title conversation." };
+    if (reputation >= 84) return { targetPosition: 6, label: "European Places", description: "Finish in the top six." };
+    if (reputation >= 77) return { targetPosition: 8, label: "Top Half Push", description: "Compete for the top eight." };
+    if (reputation >= 70) return { targetPosition: 12, label: "Mid-Table Stability", description: "Finish comfortably in mid-table." };
+    return { targetPosition: 17, label: "Stay Up", description: "Avoid relegation pressure and finish 17th or higher." };
+  }
+
+  function cupObjectiveForClub(club) {
+    const reputation = club ? club.reputation || 70 : 70;
+    if (reputation >= 88) return { targetRoundIndex: 3, label: "Reach the Semi-Final" };
+    if (reputation >= 78) return { targetRoundIndex: 2, label: "Reach the Quarter-Final" };
+    return { targetRoundIndex: 1, label: "Reach the Round of 16" };
+  }
+
+  function defaultBoardObjectives(state, club) {
+    const league = leagueObjectiveForClub(club);
+    const cup = cupObjectiveForClub(club);
+    const wagePressure = club ? weeklyWageSpend(state, club.id) / Math.max(1, club.wageBudget) * 100 : 88;
+    return {
+      league: {
+        key: "league",
+        label: league.label,
+        description: league.description,
+        targetPosition: league.targetPosition,
+        weight: BOARD_OBJECTIVE_WEIGHTS.league
+      },
+      cup: {
+        key: "cup",
+        label: cup.label,
+        description: `Board target: ${cup.label.toLowerCase()} in the domestic cup.`,
+        targetRoundIndex: cup.targetRoundIndex,
+        targetRoundLabel: DOMESTIC_CUP_ROUNDS[cup.targetRoundIndex].label,
+        weight: BOARD_OBJECTIVE_WEIGHTS.cup
+      },
+      finance: {
+        key: "finance",
+        label: "Protect Club Balance",
+        description: "Keep the club balance above the board's safe cash line.",
+        minBalance: moneyRound((club ? club.balance : 50000000) * 0.64),
+        weight: BOARD_OBJECTIVE_WEIGHTS.finance
+      },
+      wages: {
+        key: "wages",
+        label: "Control Wage Pressure",
+        description: "Keep weekly wages inside the agreed wage budget.",
+        maxPressure: Math.max(86, Math.min(98, Math.round(wagePressure + 8))),
+        weight: BOARD_OBJECTIVE_WEIGHTS.wages
+      },
+      youth: {
+        key: "youth",
+        label: "Develop Pathway",
+        description: "Promote academy players when they are ready.",
+        targetPromotions: club && club.reputation < 78 ? 2 : 1,
+        weight: BOARD_OBJECTIVE_WEIGHTS.youth
+      },
+      style: {
+        key: "style",
+        label: "Clear Playing Identity",
+        description: "Maintain strong tactical role fit in the first XI.",
+        minRoleFit: club && club.reputation >= 84 ? 72 : 66,
+        weight: BOARD_OBJECTIVE_WEIGHTS.style
+      }
+    };
+  }
+
+  function ensureBoardState(state) {
+    state.board = state.board || {};
+    const club = getClub(state, state.activeClubId);
+    const needsReset = state.board.clubId !== state.activeClubId || state.board.season !== state.season || !state.board.objectives || !Object.keys(state.board.objectives).length;
+    if (needsReset) {
+      state.board = {
+        clubId: state.activeClubId,
+        season: state.season || 1,
+        confidence: state.board.confidence || 64,
+        status: state.board.status || "stable",
+        objectives: defaultBoardObjectives(state, club),
+        youthPromotions: 0,
+        lastReviewDay: -999,
+        lastConfidence: state.board.confidence || 64,
+        reviews: []
+      };
+    } else {
+      state.board.confidence = Number.isFinite(state.board.confidence) ? state.board.confidence : 64;
+      state.board.status = state.board.status || "stable";
+      state.board.youthPromotions = state.board.youthPromotions || 0;
+      state.board.lastReviewDay = Number.isFinite(state.board.lastReviewDay) ? state.board.lastReviewDay : -999;
+      state.board.lastConfidence = Number.isFinite(state.board.lastConfidence) ? state.board.lastConfidence : state.board.confidence;
+      state.board.reviews = state.board.reviews || [];
+      state.board.objectives = { ...defaultBoardObjectives(state, club), ...(state.board.objectives || {}) };
+    }
+    return state.board;
+  }
+
+  function cupRoundDateForSeason(season, roundIndex) {
+    const round = DOMESTIC_CUP_ROUNDS[roundIndex] || DOMESTIC_CUP_ROUNDS[0];
+    const [month, day] = round.date;
+    const year = BASE_SEASON_YEAR + Math.max(0, (season || 1) - 1) + (month <= 6 ? 1 : 0);
+    return dateString(year, month, day);
+  }
+
+  function makeCupFixture(season, roundIndex, homeClubId, awayClubId, date) {
+    const round = DOMESTIC_CUP_ROUNDS[roundIndex];
+    const fixture = makeFixture(season, roundIndex + 1, homeClubId, awayClubId, date);
+    fixture.id = `cup-s${season}-${round.key}-${homeClubId}-${awayClubId}`;
+    fixture.competitionType = "cup";
+    fixture.competitionName = "Domestic Cup";
+    fixture.roundName = round.label;
+    fixture.knockout = true;
+    fixture.winnerClubId = null;
+    fixture.penalties = null;
+    return fixture;
+  }
+
+  function drawCupFixtures(state, cup, roundIndex, clubIds) {
+    const date = cupRoundDateForSeason(cup.season, roundIndex);
+    const ids = shuffle(state, clubIds.slice());
+    const fixtures = [];
+    for (let i = 0; i < ids.length; i += 2) {
+      if (!ids[i + 1]) break;
+      fixtures.push(makeCupFixture(cup.season, roundIndex, ids[i], ids[i + 1], date));
+    }
+    return fixtures;
+  }
+
+  function createDomesticCup(state) {
+    const season = state.season || 1;
+    const clubs = (state.league.clubs || []).slice().sort((a, b) => b.reputation - a.reputation || a.name.localeCompare(b.name));
+    const byeClubIds = clubs.slice(0, 12).map((club) => club.id);
+    const playoffClubIds = clubs.slice(12).map((club) => club.id);
+    const cup = {
+      id: `domestic-cup-s${season}`,
+      name: "Domestic Cup",
+      season,
+      status: "active",
+      currentRoundIndex: 0,
+      championClubId: null,
+      championName: null,
+      rounds: DOMESTIC_CUP_ROUNDS.map((round, index) => ({
+        key: round.key,
+        label: round.label,
+        date: cupRoundDateForSeason(season, index),
+        fixtures: [],
+        completed: false,
+        byeClubIds: index === 0 ? byeClubIds : []
+      }))
+    };
+    cup.rounds[0].fixtures = drawCupFixtures(state, cup, 0, playoffClubIds);
+    return cup;
+  }
+
+  function ensureDomesticCupState(state) {
+    state.cups = state.cups || {};
+    state.cups.history = state.cups.history || [];
+    if (!state.cups.domestic || state.cups.domestic.season !== state.season) {
+      state.cups.domestic = createDomesticCup(state);
+    }
+    state.cups.domestic.rounds = state.cups.domestic.rounds || [];
+    DOMESTIC_CUP_ROUNDS.forEach((round, index) => {
+      state.cups.domestic.rounds[index] = {
+        key: round.key,
+        label: round.label,
+        date: cupRoundDateForSeason(state.cups.domestic.season || state.season || 1, index),
+        fixtures: [],
+        completed: false,
+        byeClubIds: [],
+        ...(state.cups.domestic.rounds[index] || {})
+      };
+      state.cups.domestic.rounds[index].fixtures = state.cups.domestic.rounds[index].fixtures || [];
+    });
+    return state.cups.domestic;
+  }
+
+  function cupFixtureWinner(state, fixture) {
+    if (fixture.winnerClubId) return fixture.winnerClubId;
+    if (fixture.homeGoals > fixture.awayGoals) return fixture.homeClubId;
+    if (fixture.awayGoals > fixture.homeGoals) return fixture.awayClubId;
+    const homeStrength = teamStrength(state, fixture.homeClubId).overall + 2;
+    const awayStrength = teamStrength(state, fixture.awayClubId).overall;
+    return random(state) < homeStrength / Math.max(1, homeStrength + awayStrength) ? fixture.homeClubId : fixture.awayClubId;
+  }
+
+  function awardCupPrizeMoney(state, fixture) {
+    if (fixture.cupPrizeAwarded) return;
+    const round = DOMESTIC_CUP_ROUNDS[Math.max(0, (fixture.round || 1) - 1)] || DOMESTIC_CUP_ROUNDS[0];
+    const winner = getClub(state, fixture.winnerClubId);
+    const loserId = fixture.winnerClubId === fixture.homeClubId ? fixture.awayClubId : fixture.homeClubId;
+    const loser = getClub(state, loserId);
+    const participation = moneyRound(round.prize * 0.32);
+    [winner, loser].filter(Boolean).forEach((club) => {
+      club.balance += participation;
+      club.seasonFinance = club.seasonFinance || {};
+      club.seasonFinance.prizeMoney = (club.seasonFinance.prizeMoney || 0) + participation;
+    });
+    if (winner) {
+      winner.balance += round.prize;
+      winner.seasonFinance.prizeMoney = (winner.seasonFinance.prizeMoney || 0) + round.prize;
+    }
+    fixture.cupPrizeAwarded = true;
+  }
+
+  function resolveCupFixture(state, fixture) {
+    if (!fixture || fixture.competitionType !== "cup" || !fixture.played) return fixture;
+    const wasDraw = fixture.homeGoals === fixture.awayGoals;
+    fixture.winnerClubId = cupFixtureWinner(state, fixture);
+    if (wasDraw && !fixture.penalties) {
+      const winnerHome = fixture.winnerClubId === fixture.homeClubId;
+      const winnerPens = randomInt(state, 4, 6);
+      const loserPens = Math.max(1, winnerPens - randomInt(state, 1, 2));
+      fixture.penalties = {
+        home: winnerHome ? winnerPens : loserPens,
+        away: winnerHome ? loserPens : winnerPens
+      };
+    }
+    awardCupPrizeMoney(state, fixture);
+    if (fixture.homeClubId === state.activeClubId || fixture.awayClubId === state.activeClubId) {
+      const won = fixture.winnerClubId === state.activeClubId;
+      const opponentId = fixture.homeClubId === state.activeClubId ? fixture.awayClubId : fixture.homeClubId;
+      addInbox(state, won ? "Cup Progress" : "Cup Exit", won ? `${getClub(state, state.activeClubId).name} advanced past ${getClub(state, opponentId).name} in the ${fixture.roundName}.` : `${getClub(state, state.activeClubId).name} were knocked out by ${getClub(state, opponentId).name} in the ${fixture.roundName}.`);
+      state.lastMatch = JSON.parse(JSON.stringify(fixture));
+    }
+    return fixture;
+  }
+
+  function completeDomesticCup(state, cup, championClubId) {
+    if (cup.status === "complete") return null;
+    const champion = getClub(state, championClubId);
+    cup.status = "complete";
+    cup.championClubId = championClubId;
+    cup.championName = champion ? champion.name : "Unknown";
+    const summary = {
+      season: cup.season,
+      competitionName: cup.name,
+      championClubId,
+      championName: cup.championName,
+      rounds: cup.rounds.map((round) => ({
+        key: round.key,
+        label: round.label,
+        date: round.date,
+        fixtures: round.fixtures.map((fixture) => JSON.parse(JSON.stringify(fixture)))
+      }))
+    };
+    state.cups.history.unshift(summary);
+    state.cups.history = state.cups.history.slice(0, 8);
+    if (championClubId === state.activeClubId) {
+      state.manager.trophies += 1;
+      state.manager.reputation = Math.round(clamp(state.manager.reputation + 3.5, 1, 100));
+      addInbox(state, "Cup Winners", `${cup.championName} lifted the ${cup.name}.`);
+    } else {
+      addInbox(state, "Cup Final", `${cup.championName} won the ${cup.name}.`);
+    }
+    return { type: "cup", title: "Cup Complete", championClubId, championName: cup.championName };
+  }
+
+  function advanceDomesticCup(state) {
+    const cup = ensureDomesticCupState(state);
+    if (cup.status === "complete") return null;
+    let event = null;
+    for (let index = 0; index < cup.rounds.length; index += 1) {
+      const round = cup.rounds[index];
+      if (!round.fixtures.length || round.completed) continue;
+      if (!round.fixtures.every((fixture) => fixture.played && fixture.winnerClubId)) break;
+      round.completed = true;
+      let qualified = round.fixtures.map((fixture) => fixture.winnerClubId);
+      if (index === 0) qualified = (round.byeClubIds || []).concat(qualified);
+      if (qualified.length <= 1 || index >= cup.rounds.length - 1) {
+        event = event || completeDomesticCup(state, cup, qualified[0]);
+        break;
+      }
+      const nextRound = cup.rounds[index + 1];
+      if (!nextRound.fixtures.length) {
+        nextRound.fixtures = drawCupFixtures(state, cup, index + 1, qualified);
+        cup.currentRoundIndex = index + 1;
+        const activeFixture = nextRound.fixtures.find((fixture) => fixture.homeClubId === state.activeClubId || fixture.awayClubId === state.activeClubId);
+        if (activeFixture) {
+          const opponentId = activeFixture.homeClubId === state.activeClubId ? activeFixture.awayClubId : activeFixture.homeClubId;
+          addInbox(state, "Cup Draw", `${getClub(state, state.activeClubId).name} will face ${getClub(state, opponentId).name} in the ${nextRound.label}.`);
+          event = event || { type: "cup", title: "Cup Draw", fixtureId: activeFixture.id };
+        }
+      }
+    }
+    return event;
+  }
+
+  function domesticCupFixtures(state) {
+    const cup = ensureDomesticCupState(state);
+    return cup.rounds.flatMap((round) => round.fixtures.map((fixture) => ({ ...fixture, roundName: fixture.roundName || round.label, date: fixture.date || round.date })));
+  }
+
+  function domesticCupReport(state) {
+    const cup = ensureDomesticCupState(state);
+    const activeClubId = state.activeClubId;
+    const fixtures = domesticCupFixtures(state);
+    const activeFixtures = fixtures.filter((fixture) => fixture.homeClubId === activeClubId || fixture.awayClubId === activeClubId);
+    const playedActive = activeFixtures.filter((fixture) => fixture.played);
+    const activeEliminated = playedActive.some((fixture) => fixture.winnerClubId && fixture.winnerClubId !== activeClubId);
+    const bestRound = activeFixtures.reduce((best, fixture) => Math.max(best, Math.max(0, (fixture.round || 1) - 1)), -1);
+    const nextFixture = activeFixtures.filter((fixture) => !fixture.played).sort((a, b) => compareDates(a.date, b.date))[0] || null;
+    return {
+      cup,
+      name: cup.name,
+      status: cup.status,
+      championClubId: cup.championClubId,
+      championName: cup.championName,
+      rounds: cup.rounds,
+      activeEliminated,
+      activeAlive: cup.status !== "complete" && !activeEliminated,
+      bestRoundIndex: bestRound,
+      bestRoundLabel: bestRound >= 0 ? DOMESTIC_CUP_ROUNDS[bestRound].label : "Not entered",
+      nextFixture,
+      fixtures
+    };
+  }
+
+  function boardStatus(confidence) {
+    if (confidence >= 78) return { key: "secure", label: "Secure", tone: "green" };
+    if (confidence >= 58) return { key: "stable", label: "Stable", tone: "blue" };
+    if (confidence >= 40) return { key: "pressure", label: "Pressure", tone: "amber" };
+    return { key: "atRisk", label: "At Risk", tone: "red" };
+  }
+
+  function scoreBoardObjectives(state) {
+    const board = ensureBoardState(state);
+    const club = getClub(state, state.activeClubId);
+    const table = calculateTable(state);
+    const activeRow = table.find((row) => row.clubId === state.activeClubId);
+    const cup = domesticCupReport(state);
+    const wagePressure = club ? Math.round(weeklyWageSpend(state, club.id) / Math.max(1, club.wageBudget) * 100) : 100;
+    const roleReport = club ? tacticalRoleReport(state, club.id) : null;
+    const objective = board.objectives;
+    const rows = [];
+
+    const position = activeRow ? table.indexOf(activeRow) + 1 : 20;
+    const leagueScore = Math.round(clamp(100 - Math.max(0, position - objective.league.targetPosition) * 10 + Math.max(0, objective.league.targetPosition - position) * 2, 18, 100));
+    rows.push({
+      ...objective.league,
+      progress: leagueScore,
+      detail: `${ordinalNumber(position)} now | target ${ordinalNumber(objective.league.targetPosition)}`,
+      tone: leagueScore >= 80 ? "green" : leagueScore >= 58 ? "blue" : leagueScore >= 40 ? "amber" : "red"
+    });
+
+    const cupRoundScore = cup.activeEliminated ? (cup.bestRoundIndex >= objective.cup.targetRoundIndex ? 100 : 34 + Math.max(0, cup.bestRoundIndex + 1) * 16) : cup.status === "complete" && cup.championClubId === state.activeClubId ? 100 : 60 + Math.min(cup.bestRoundIndex + 1, objective.cup.targetRoundIndex + 1) * 12;
+    rows.push({
+      ...objective.cup,
+      progress: Math.round(clamp(cupRoundScore, 20, 100)),
+      detail: cup.championClubId === state.activeClubId ? "Cup winners" : cup.activeEliminated ? `Exited: ${cup.bestRoundLabel}` : cup.nextFixture ? `Next: ${cup.nextFixture.roundName}` : "Awaiting draw",
+      tone: cupRoundScore >= 80 ? "green" : cupRoundScore >= 58 ? "blue" : cupRoundScore >= 40 ? "amber" : "red"
+    });
+
+    const financeScore = club ? Math.round(clamp(club.balance / Math.max(1, objective.finance.minBalance) * 86, 20, 100)) : 50;
+    rows.push({
+      ...objective.finance,
+      progress: financeScore,
+      detail: `${club ? formatMoney(club.balance) : "-"} | safe line ${formatMoney(objective.finance.minBalance)}`,
+      tone: financeScore >= 82 ? "green" : financeScore >= 60 ? "blue" : financeScore >= 42 ? "amber" : "red"
+    });
+
+    const wageScore = Math.round(clamp(100 - Math.max(0, wagePressure - objective.wages.maxPressure) * 4, 20, 100));
+    rows.push({
+      ...objective.wages,
+      progress: wageScore,
+      detail: `${wagePressure}% wage pressure | limit ${objective.wages.maxPressure}%`,
+      tone: wageScore >= 82 ? "green" : wageScore >= 60 ? "blue" : wageScore >= 42 ? "amber" : "red"
+    });
+
+    const youthScore = Math.round(clamp((board.youthPromotions || 0) / Math.max(1, objective.youth.targetPromotions) * 100, 15, 100));
+    rows.push({
+      ...objective.youth,
+      progress: youthScore,
+      detail: `${board.youthPromotions || 0}/${objective.youth.targetPromotions} promoted`,
+      tone: youthScore >= 100 ? "green" : youthScore >= 50 ? "blue" : "amber"
+    });
+
+    const roleFit = roleReport ? roleReport.averageFit : 62;
+    const styleScore = Math.round(clamp(roleFit / Math.max(1, objective.style.minRoleFit) * 88, 20, 100));
+    rows.push({
+      ...objective.style,
+      progress: styleScore,
+      detail: `${roleFit}% role fit | target ${objective.style.minRoleFit}%`,
+      tone: styleScore >= 82 ? "green" : styleScore >= 60 ? "blue" : styleScore >= 42 ? "amber" : "red"
+    });
+
+    return rows;
+  }
+
+  function boardReport(state) {
+    const board = ensureBoardState(state);
+    const objectives = scoreBoardObjectives(state);
+    const weighted = objectives.reduce((total, objective) => total + objective.progress * objective.weight, 0);
+    const weight = objectives.reduce((total, objective) => total + objective.weight, 0) || 1;
+    const confidence = Math.round(clamp(weighted / weight, 1, 100));
+    const status = boardStatus(confidence);
+    board.confidence = confidence;
+    board.status = status.key;
+    return {
+      confidence,
+      status,
+      objectives,
+      reviews: board.reviews || [],
+      youthPromotions: board.youthPromotions || 0
+    };
+  }
+
+  function processBoardDaily(state) {
+    const board = ensureBoardState(state);
+    const report = boardReport(state);
+    const day = state.calendar ? state.calendar.day || 1 : 1;
+    if (day - board.lastReviewDay < 14 && Math.abs(report.confidence - (board.lastConfidence || report.confidence)) < 12) return null;
+    board.lastReviewDay = day;
+    const delta = report.confidence - (board.lastConfidence || report.confidence);
+    board.lastConfidence = report.confidence;
+    const weakest = report.objectives.slice().sort((a, b) => a.progress - b.progress)[0];
+    const review = {
+      date: state.calendar ? state.calendar.currentDate : null,
+      season: state.season || 1,
+      confidence: report.confidence,
+      status: report.status.label,
+      weakest: weakest ? weakest.label : null,
+      delta
+    };
+    board.reviews.unshift(review);
+    board.reviews = board.reviews.slice(0, 8);
+    if (day < 7 && Math.abs(delta) < 12) return null;
+    addInbox(state, "Board Review", `Board confidence is ${report.status.label.toLowerCase()} at ${report.confidence}/100. Focus area: ${weakest ? weakest.label : "overall progress"}.`);
+    return { type: "board", title: "Board Review", confidence: report.confidence, status: report.status.key };
   }
 
   function secondaryPositions(state, position) {
@@ -1061,6 +1524,9 @@
     state.players[player.id] = player;
     club.squad.push(player.id);
     academy.prospects.splice(index, 1);
+    if (club.id === state.activeClubId) {
+      ensureBoardState(state).youthPromotions += 1;
+    }
     repairMatchdaySquad(state, club.id);
     addInbox(state, "Academy Promotion", `${player.name} signed a senior contract and joined the first-team squad as a prospect.`);
     return { ok: true, message: `${player.name} promoted to the senior squad.`, playerId: player.id };
@@ -1750,7 +2216,9 @@
 
     ensureScoutingState(state);
     ensureAcademyState(state);
+    ensureBoardState(state);
     state.league.schedule = generateSchedule(state.league.clubs, state.season, state.calendar.seasonStartDate);
+    ensureDomesticCupState(state);
     refreshTransferMarket(state);
     addInbox(state, "Board", `Welcome to ${getClub(state, state.activeClubId).name}. The board expects a competitive Premier League season and sustainable squad building.`);
     addInbox(state, "Recruitment", "Initial scouting files are incomplete. Scout confidence improves each time you watch a target.");
@@ -2416,6 +2884,10 @@
         if (!fixture.played || fixture.homeClubId !== clubId && fixture.awayClubId !== clubId || !fixture.date) return;
         if (compareDates(fixture.date, date) < 0) played.push(fixture);
       });
+    });
+    domesticCupFixtures(state).forEach((fixture) => {
+      if (!fixture.played || fixture.homeClubId !== clubId && fixture.awayClubId !== clubId || !fixture.date) return;
+      if (compareDates(fixture.date, date) < 0) played.push(fixture);
     });
     if (!played.length) return null;
     played.sort((a, b) => compareDates(b.date, a.date));
@@ -3135,7 +3607,7 @@
     const awayWon = fixture.awayGoals > fixture.homeGoals;
     pushForm(homeClub, homeWon ? "W" : awayWon ? "L" : "D");
     pushForm(awayClub, awayWon ? "W" : homeWon ? "L" : "D");
-    updateBiggestWinRecord(state, fixture);
+    if (fixture.competitionType !== "cup") updateBiggestWinRecord(state, fixture);
 
     fixture.playerRatings.forEach((rating) => {
       const player = state.players[rating.playerId];
@@ -3405,7 +3877,9 @@
   }
 
   function allFixturesPlayed(state) {
-    return state.league.schedule.every((roundData) => roundData.fixtures.every((fixture) => fixture.played));
+    const leagueDone = state.league.schedule.every((roundData) => roundData.fixtures.every((fixture) => fixture.played));
+    const cup = ensureDomesticCupState(state);
+    return leagueDone && (!cup || cup.status === "complete");
   }
 
   function processInjuryReturns(state) {
@@ -3635,6 +4109,8 @@
       const fixture = (roundData.fixtures || []).find((item) => !item.played && item.date === date && (item.homeClubId === clubId || item.awayClubId === clubId));
       if (fixture) return fixture;
     }
+    const cupFixture = domesticCupFixtures(state).find((item) => !item.played && item.date === date && (item.homeClubId === clubId || item.awayClubId === clubId));
+    if (cupFixture) return cupFixture;
     return null;
   }
 
@@ -3926,6 +4402,29 @@
     }
   }
 
+  function simulateCupFixturesForDate(state, date) {
+    const cup = ensureDomesticCupState(state);
+    if (!cup || cup.status === "complete") return { fixtures: [], activeMatch: null, cupEvent: null };
+    let activeMatch = null;
+    const fixtures = [];
+    cup.rounds.forEach((round) => {
+      if (compareDates(round.date, date) > 0) return;
+      round.fixtures.forEach((fixture) => {
+        if (fixture.played) return;
+        fixture.date = fixture.date || round.date;
+        fixture.roundName = fixture.roundName || round.label;
+        const result = simulateFixture(state, fixture);
+        resolveCupFixture(state, fixture);
+        fixtures.push(JSON.parse(JSON.stringify(result)));
+        if (fixture.homeClubId === state.activeClubId || fixture.awayClubId === state.activeClubId) {
+          activeMatch = JSON.parse(JSON.stringify(fixture));
+        }
+      });
+    });
+    const cupEvent = advanceDomesticCup(state);
+    return { fixtures, activeMatch, cupEvent };
+  }
+
   function simulateFixturesForDate(state, date) {
     const dueRounds = state.league.schedule.filter((roundData) => {
       const hasUnplayed = roundData.fixtures.some((fixture) => !fixture.played);
@@ -3945,7 +4444,14 @@
       });
     });
     syncCurrentRound(state);
-    return { rounds: dueRounds, fixtures, activeMatch };
+    const cup = simulateCupFixturesForDate(state, date);
+    return {
+      rounds: dueRounds,
+      fixtures: fixtures.concat(cup.fixtures),
+      activeMatch: cup.activeMatch || activeMatch,
+      cupEvent: cup.cupEvent,
+      cupFixtures: cup.fixtures
+    };
   }
 
   function simulateNextDay(state) {
@@ -3977,7 +4483,8 @@
     const aiMarketMove = maybeProcessDailyAiClubTransfer(state);
     const matchday = simulateFixturesForDate(state, processedDate);
     const happinessEvent = processSquadHappinessDaily(state);
-    if (clubEvent || happinessEvent || scoutingEvent || academyEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
+    const boardEvent = processBoardDaily(state);
+    if (clubEvent || happinessEvent || scoutingEvent || academyEvent || boardEvent || matchday.cupEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
 
     let seasonEnded = false;
     let seasonSummary = null;
@@ -3999,6 +4506,8 @@
       matchday: matchday.fixtures.length > 0,
       scoutingEvent,
       academyEvent,
+      boardEvent,
+      cupEvent: matchday.cupEvent,
       clubEvent,
       happinessEvent,
       offer,
@@ -4025,7 +4534,7 @@
   function describeDayEvent(state, before, result) {
     if (result.activeMatch) return { type: "match", title: "Matchday", body: "The next match is ready." };
     if (result.seasonEnded) return { type: "season", title: "Season Complete", body: result.seasonSummary ? `${result.seasonSummary.championName} won the league.` : "The season has finished." };
-    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.scoutingEvent ? { type: result.scoutingEvent.type, title: result.scoutingEvent.title } : null) || (result.academyEvent ? { type: result.academyEvent.type, title: result.academyEvent.title } : null) || (result.happinessEvent ? { type: result.happinessEvent.type, title: result.happinessEvent.title } : null) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
+    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.cupEvent ? { type: result.cupEvent.type, title: result.cupEvent.title } : null) || (result.boardEvent ? { type: result.boardEvent.type, title: result.boardEvent.title } : null) || (result.scoutingEvent ? { type: result.scoutingEvent.type, title: result.scoutingEvent.title } : null) || (result.academyEvent ? { type: result.academyEvent.type, title: result.academyEvent.title } : null) || (result.happinessEvent ? { type: result.happinessEvent.type, title: result.happinessEvent.title } : null) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
   }
 
   function simulateUntilNextEvent(state, options) {
@@ -4053,11 +4562,14 @@
     ensureCalendar(state);
     const roundData = state.league.schedule[state.league.currentRound];
     if (!roundData) {
+      const cup = ensureDomesticCupState(state);
+      if (cup && cup.status !== "complete") return simulateNextDay(state);
       return finishSeason(state);
     }
     if (roundData.date) state.calendar.currentDate = roundData.date;
     processTransferPreAgreements(state);
-    let activeMatch = null;
+    const cupMatches = roundData.date ? simulateCupFixturesForDate(state, roundData.date) : { activeMatch: null };
+    let activeMatch = cupMatches.activeMatch || null;
     roundData.fixtures.forEach((fixture) => {
       const result = simulateFixture(state, fixture);
       if (fixture.homeClubId === state.activeClubId || fixture.awayClubId === state.activeClubId) {
@@ -4075,9 +4587,20 @@
     processScoutingAssignments(state);
     maybeGenerateAiOffer(state);
     maybeProcessDailyAiClubTransfer(state);
+    processBoardDaily(state);
     refreshTransferMarket(state);
 
     if (state.league.currentRound >= state.league.schedule.length) {
+      const cup = ensureDomesticCupState(state);
+      if (cup && cup.status !== "complete") {
+        return {
+          type: "round",
+          round: roundData,
+          activeMatch,
+          seasonEnded: false,
+          cupPending: true
+        };
+      }
       const seasonSummary = finishSeason(state);
       return {
         type: "round",
@@ -4135,10 +4658,16 @@
     const awards = calculateAwards(state, finalTable);
     const standings = finalTable.map((row, index) => ({ ...row, position: index + 1 }));
     const completedSeason = state.season;
+    const cupSummary = domesticCupReport(state);
     state.league.history.unshift({
       season: completedSeason,
       championClubId: finalTable[0].clubId,
       championName: finalTable[0].clubName,
+      cup: {
+        championClubId: cupSummary.championClubId,
+        championName: cupSummary.championName,
+        competitionName: cupSummary.name
+      },
       standings,
       awards,
       fixtures: archiveFixtures(state),
@@ -4199,6 +4728,9 @@
     state.calendar = createSeasonCalendar(state.season);
     processAcademySeasonRollover(state);
     state.league.schedule = generateSchedule(state.league.clubs, state.season, state.calendar.seasonStartDate);
+    state.cups = state.cups || { history: [] };
+    state.cups.domestic = createDomesticCup(state);
+    ensureBoardState(state);
     state.transfers.offers = state.transfers.offers.filter((offer) => offer.status === "pending" || offer.status === "countered").slice(0, 12);
     refreshTransferMarket(state);
     processTransferPreAgreements(state);
@@ -6109,11 +6641,17 @@
   }
 
   function getNextFixture(state, clubId) {
+    const fixtures = [];
     for (let i = state.league.currentRound; i < state.league.schedule.length; i += 1) {
       const fixture = state.league.schedule[i].fixtures.find((item) => item.homeClubId === clubId || item.awayClubId === clubId);
-      if (fixture && !fixture.played) return fixture;
+      if (fixture && !fixture.played) fixtures.push(fixture);
     }
-    return null;
+    domesticCupFixtures(state).forEach((fixture) => {
+      if (!fixture.played && (fixture.homeClubId === clubId || fixture.awayClubId === clubId)) fixtures.push(fixture);
+    });
+    return fixtures
+      .filter((fixture) => fixture.date)
+      .sort((a, b) => compareDates(a.date, b.date))[0] || fixtures[0] || null;
   }
 
   function formatGameDate(value) {
@@ -6191,6 +6729,9 @@
       }
       assignment.startedDate = assignment.startedDate || state.calendar.currentDate;
     });
+    ensureBoardState(state);
+    ensureDomesticCupState(state);
+    advanceDomesticCup(state);
     (state.league.clubs || []).forEach((club) => repairMatchdaySquad(state, club.id));
     syncCurrentRound(state);
     return state;
@@ -6235,6 +6776,7 @@
     SCOUTING_FOCUS,
     STAFF_DEPARTMENTS,
     TACTICAL_ROLES,
+    DOMESTIC_CUP_ROUNDS,
     DEFAULT_TACTICS,
     trainingFocusLabel,
     trainingPlanLabel,
@@ -6260,6 +6802,8 @@
     staffRoomReport,
     upgradeStaffDepartment,
     staffEffectsForClub,
+    boardReport,
+    domesticCupReport,
     roleOptionsForPosition,
     tacticalRoleLabel,
     playerRoleFit,

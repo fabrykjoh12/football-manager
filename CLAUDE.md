@@ -219,6 +219,19 @@ Design target:
 - Tactics screen now includes a Tactical Roles panel with 11 role selectors, player fit scores, phase bias, weak-fit warnings, and Auto Roles.
 - Regression tests cover staff migration, staff upgrades, role migration, tactical role reports, role edits, and auto role assignment.
 
+### Board Objectives + Cup Competitions
+
+- New saves and migrated saves now include board objectives for league finish, cup progress, finance, wage pressure, youth pathway, and playing identity.
+- Board confidence is scored from objective progress and can create Board Review inbox events during daily simulation.
+- Dashboard now shows Board Confidence and Cup Run metrics.
+- Manager screen now has a Board Objectives panel with progress bars, review history, and objective details.
+- Domestic Cup state is generated every season with a Premier League knockout format: play-off, round of 16, quarter-final, semi-final, and final.
+- Cup fixtures are integrated into next-fixture lookup, training calendars, matchdays, live match centre, player stats, fitness, manager record, prize money, and season history.
+- Cup matches resolve knockout winners, including penalty winners after draws.
+- Match Day now shows the active cup round and cup fixtures alongside league rounds.
+- Weekly season simulation now waits for pending cup fixtures before season rollover.
+- Regression tests cover board migration, board reports, cup migration, cup creation, active cup matches, knockout winners, and cup history archives.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
@@ -232,24 +245,24 @@ Design target:
 - `298e0b9` Add youth academy and scouting network
 - `c0e3763` Fix rating potentials and profile labels
 - `bccc3c9` Add staff room and tactical roles
+- `pending` Add board objectives and domestic cup
 
-The latest completed feature phase is Staff Room + Tactical Roles.
+The latest completed feature phase is Board Objectives + Cup Competitions.
 
 ## Current Roadmap
 
-### Next Phase: Board Objectives + Cup Competitions
+### Next Phase: European Qualification + Continental Competition
 
 Planned work:
 
-- Board objectives for league finish, youth development, finances, wage control, transfers, and playing style.
-- Manager confidence/job security that reacts to form, finances, objectives, morale, and supporter pressure.
-- Domestic cup competition with draw, fixtures, rotation pressure, prize money, and matchday stories.
-- Cup fixtures integrated into the daily calendar, training load, player fatigue, and squad rotation advice.
-- Board and media inbox stories for milestones, derby games, cup upsets, and objective reviews.
+- European qualification from league finish and cup/league achievements.
+- Continental group/knockout competition for qualified clubs in the following season.
+- Coefficient/reputation rewards, prize money, squad rotation pressure, and travel fatigue.
+- European fixtures integrated into daily calendar, training load, next fixture, live match, and history.
+- Board objectives and media stories that react to European progress.
 
 ### Later Phases
 
-- European qualification.
 - Youth loans and pathway promises.
 - Individual player instructions tied to tactical roles and match engine phases.
 - Inbox stories for staff advice, tactical concerns, and role-development milestones.
