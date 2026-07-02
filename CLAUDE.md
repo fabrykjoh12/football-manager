@@ -286,7 +286,7 @@ Design target:
 - `b09c4c0` Add board objectives and domestic cup
 - `06ceb1c` Add European qualification and Continental Cup
 - `ea324bc` Upgrade premium UI design system
-- Current session: Add youth loans and pathway promises
+- `e4c6b13` Add youth loans and pathway promises
 
 The latest completed feature phase is Youth Loans + Pathway Promises.
 
