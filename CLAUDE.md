@@ -259,7 +259,7 @@ Design target:
 - `c0e3763` Fix rating potentials and profile labels
 - `bccc3c9` Add staff room and tactical roles
 - `b09c4c0` Add board objectives and domestic cup
-- Current session: Add European qualification and Continental Cup
+- `06ceb1c` Add European qualification and Continental Cup
 
 The latest completed feature phase is European Qualification + Continental Competition.
 
