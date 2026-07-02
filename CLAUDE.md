@@ -245,7 +245,7 @@ Design target:
 - `298e0b9` Add youth academy and scouting network
 - `c0e3763` Fix rating potentials and profile labels
 - `bccc3c9` Add staff room and tactical roles
-- `pending` Add board objectives and domestic cup
+- `b09c4c0` Add board objectives and domestic cup
 
 The latest completed feature phase is Board Objectives + Cup Competitions.
 
