@@ -220,11 +220,19 @@
       const player = item.player || item;
       const slot = item.slot || (Data.FORMATIONS[formation] || Data.FORMATIONS["4-3-3"])[index] || player.position;
       const role = roleForSlot(slot, formation, tactics);
+      const instructionFit = Number(item.instructionFit || 0);
+      const instructionMastery = Number(item.instructionMastery || 0);
       return {
         player,
         slot,
         role,
-        roleRating: calculateRoleRating(player, role, slot, 100),
+        instructionKey: item.instructionKey || "balanced",
+        instructionLabel: item.instructionLabel || "Balanced",
+        instructionFit,
+        instructionMastery,
+        instructionPhases: item.instructionPhases || {},
+        instructionLoad: Number(item.instructionLoad || 0),
+        roleRating: clamp(calculateRoleRating(player, role, slot, 100) + (instructionFit - 60) * 0.035 + (instructionMastery - 50) * 0.025, 20, 108),
         energy: clamp(player.fitness || 88, 45, 100),
         onMinute: 0,
         offMinute: 90,
@@ -239,6 +247,12 @@
         player,
         slot,
         role,
+        instructionKey: "balanced",
+        instructionLabel: "Balanced",
+        instructionFit: 64,
+        instructionMastery: 64,
+        instructionPhases: {},
+        instructionLoad: 0,
         roleRating: calculateRoleRating(player, role, slot, clamp((player.fitness || 88) + 8, 55, 100)),
         energy: clamp((player.fitness || 88) + 8, 55, 100),
         benchIndex: item.benchIndex !== undefined ? item.benchIndex : index,
@@ -275,6 +289,16 @@
     return average(pool.map((item) => average(attrs.map((key) => attr(item.player, key))) * 0.62 + item.roleRating * 0.38));
   }
 
+  function instructionPhaseTotals(players) {
+    const totals = {};
+    players.forEach((item) => {
+      Object.entries(item.instructionPhases || {}).forEach(([phase, value]) => {
+        totals[phase] = (totals[phase] || 0) + Number(value || 0);
+      });
+    });
+    return totals;
+  }
+
   function calculatePhaseStrengths(players, formation, tactics, isHome) {
     const mentality = tacticValue(tactics, "mentality");
     const press = tacticValue(tactics, "pressing");
@@ -297,7 +321,7 @@
     const roleFit = average(players.map((item) => 100 - slotPenalty(item.player, item.slot) * 5));
     const chemistry = clamp(roleFit * 0.12 + average(players.map((item) => item.player.morale || 55)) * 0.08, 8, 18);
 
-    return {
+    const phases = {
       attackStrength: forwards + mentality * 3.8 + tempo * 1.3 + formationModifier(formation, "attackingSupport") + home,
       midfieldControl: midfield + passing * 3.5 - tempo * 1.4 + formationModifier(formation, "midfieldControl") + home * 0.5,
       defensiveStability: centerBacks * 0.62 + fullbacks * 0.25 + keeper * 0.13 - mentality * 2.2 - line * 1.3 + formationModifier(formation, "defensiveStability"),
@@ -317,6 +341,13 @@
       roleFit,
       chemistry
     };
+    const instructionTotals = instructionPhaseTotals(players);
+    Object.entries(instructionTotals).forEach(([phase, value]) => {
+      phases[phase] = (phases[phase] || 0) + value;
+    });
+    phases.instructionCohesion = average(players.map((item) => item.instructionFit || 64));
+    phases.chemistry += clamp((phases.instructionCohesion - 62) / 18, -1.6, 2.2);
+    return phases;
   }
 
   function applyMatchPrepModifiers(phases, club) {
@@ -712,9 +743,10 @@
       const resistance = (attr(player, "stamina") + attr(player, "naturalFitness")) / 200;
       const age = player.age > 31 ? 1.12 : player.age < 23 ? 0.95 : 1;
       const roleLoad = ["RB", "LB", "RW", "LW", "CM"].includes(item.slot) ? 1.08 : item.slot === "ST" ? 0.98 : 1;
-      item.energy = clamp(item.energy - base * roleLoad * age * (1.28 - resistance), 36, 100);
+      const instructionLoad = clamp(1 + Number(item.instructionLoad || 0), 0.82, 1.24);
+      item.energy = clamp(item.energy - base * roleLoad * age * instructionLoad * (1.28 - resistance), 36, 100);
       const ps = stats.player[player.id];
-      if (ps) ps.distanceCovered += base * roleLoad * (1 + attr(player, "workRate") / 110);
+      if (ps) ps.distanceCovered += base * roleLoad * instructionLoad * (1 + attr(player, "workRate") / 110);
     });
   }
 

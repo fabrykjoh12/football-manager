@@ -693,6 +693,7 @@
         ${metric("Mentality", tacticLabel("mentality", club.tactics && club.tactics.mentality), tacticLabel("pressing", club.tactics && club.tactics.pressing))}
         ${metric("Intensity", profile.intensity, profile.fatigue > 1 ? "High player load" : "Managed load")}
         ${metric("Role Fit", `${roleReport ? roleReport.averageFit : "-"}%`, roleReport && roleReport.weakFits.length ? `${roleReport.weakFits.length} weak fits` : `${round(strength.overall, 1)} team strength`)}
+        ${metric("Instruction Fit", `${roleReport ? roleReport.averageInstructionFit : "-"}%`, roleReport && roleReport.instructionWarnings.length ? `${roleReport.instructionWarnings.length} concerns` : "Role instructions stable")}
       </div>
       <div class="tactics-layout" style="margin-top:14px">
         <div class="panel">
@@ -741,12 +742,19 @@
           <div class="preview-row"><span>Attack Bias</span><strong>${round(report.phaseBias.attack || 0, 1)}</strong></div>
           <div class="preview-row"><span>Midfield Bias</span><strong>${round(report.phaseBias.midfield || 0, 1)}</strong></div>
           <div class="preview-row"><span>Defensive Bias</span><strong>${round(report.phaseBias.defense || 0, 1)}</strong></div>
+          <div class="preview-row"><span>Instruction Fit</span><strong>${report.averageInstructionFit}</strong></div>
           ${report.weakFits.length ? `
             <div class="message warn">
               <strong>Role Mismatch</strong><br>
               ${report.weakFits.slice(0, 3).map((slot) => `${escapeHtml(slot.playerName)} as ${escapeHtml(slot.roleLabel)}`).join("<br>")}
             </div>
           ` : `<div class="message good"><strong>Role Cohesion</strong><br>The current XI fits the assigned roles well.</div>`}
+          ${report.instructionWarnings.length ? `
+            <div class="message warn">
+              <strong>Instruction Concern</strong><br>
+              ${report.instructionWarnings.slice(0, 3).map((slot) => `${escapeHtml(slot.playerName)}: ${escapeHtml(slot.instructionLabel)}`).join("<br>")}
+            </div>
+          ` : `<div class="message good"><strong>Instruction Clarity</strong><br>Player instructions match the current roles.</div>`}
         </div>
       </div>
     `;
@@ -754,22 +762,40 @@
 
   function renderRoleSlot(slot) {
     const selectId = `role-${slot.slotIndex}`;
+    const instructionId = `instruction-${slot.slotIndex}`;
     return `
       <div class="role-row">
         <div class="role-player">
           <span class="role-index">${slot.slotIndex + 1}</span>
           <div>
             <strong>${escapeHtml(slot.playerName)}</strong>
-            <small>${positionBadge(slot.position)} ${escapeHtml(slot.description)}</small>
+            <small>${positionBadge(slot.position)} ${escapeHtml(slot.roleLabel)} | ${escapeHtml(slot.instructionLabel)}</small>
           </div>
         </div>
-        <label class="sr-only" for="${selectId}">Role for ${escapeAttr(slot.playerName)}</label>
-        <select id="${selectId}" data-action="set-tactical-role" data-slot-index="${slot.slotIndex}">
-          ${slot.options.map((option) => `<option value="${escapeAttr(option.key)}" ${option.key === slot.roleKey ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
-        </select>
-        <div class="role-fit">
-          <span class="badge ${slot.tone}">${slot.fit}</span>
-          ${bar(slot.fit, slot.tone)}
+        <div class="role-controls">
+          <label class="sr-only" for="${selectId}">Role for ${escapeAttr(slot.playerName)}</label>
+          <select id="${selectId}" data-action="set-tactical-role" data-slot-index="${slot.slotIndex}">
+            ${slot.options.map((option) => `<option value="${escapeAttr(option.key)}" ${option.key === slot.roleKey ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+          </select>
+          <label class="sr-only" for="${instructionId}">Instruction for ${escapeAttr(slot.playerName)}</label>
+          <select id="${instructionId}" data-action="set-player-instruction" data-slot-index="${slot.slotIndex}">
+            ${slot.instructionOptions.map((option) => `<option value="${escapeAttr(option.key)}" ${option.key === slot.instructionKey ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="role-fit-stack">
+          <div class="role-fit">
+            <span class="badge ${slot.tone}">Role ${slot.fit}</span>
+            ${bar(slot.fit, slot.tone)}
+          </div>
+          <div class="role-fit">
+            <span class="badge ${slot.instructionTone}">Inst ${slot.instructionFit}</span>
+            ${bar(slot.instructionFit, slot.instructionTone)}
+          </div>
+          <div class="role-mastery-line">
+            <span>${round(slot.roleMastery, 0)} role</span>
+            <span>${round(slot.instructionMastery, 0)} instr</span>
+            ${slot.instructionLoad ? `<span>${slot.instructionLoad > 0 ? "+" : ""}${round(slot.instructionLoad * 100, 0)}% load</span>` : ""}
+          </div>
         </div>
       </div>
     `;
@@ -2068,6 +2094,7 @@
     const fc26 = Engine.fc26StyleStats(player);
     const pathway = Engine.pathwayPromiseReport(state, player.id);
     const loanReport = Engine.playerLoanReport(state, player.id);
+    const roleDevelopment = Engine.roleDevelopmentReport(state, player.id);
     const isOwnPlayer = player.clubId === state.activeClubId;
     return `
       <div class="player-detail">
@@ -2094,6 +2121,11 @@
             <div class="profile-card-grid pathway-profile-grid">
               ${pathway ? renderPathwayProfileCard(pathway) : ""}
               ${loanReport ? renderLoanProfileCard(loanReport) : ""}
+            </div>
+          ` : ""}
+          ${roleDevelopment && (roleDevelopment.current || roleDevelopment.roles.length || roleDevelopment.instructions.length) ? `
+            <div class="profile-card-grid pathway-profile-grid">
+              ${renderRoleDevelopmentProfileCard(roleDevelopment)}
             </div>
           ` : ""}
           ${isOwnPlayer ? `<div class="player-management-grid">
@@ -2268,6 +2300,41 @@
           <span>${escapeHtml(loan.roleLabel || "-")}</span>
           <span>${escapeHtml(loan.focusLabel || "-")}</span>
         </div>
+      </div>
+    `;
+  }
+
+  function renderRoleDevelopmentProfileCard(report) {
+    const current = report.current;
+    const bestRole = report.roles[0];
+    const bestInstruction = report.instructions[0];
+    return `
+      <div class="profile-card pathway-profile-card role-development-card">
+        <div class="profile-card-headline">
+          <strong>Role Development</strong>
+          ${current ? `<span class="badge ${current.roleFit >= 72 && current.instructionFit >= 72 ? "green" : current.roleFit >= 58 && current.instructionFit >= 58 ? "blue" : "amber"}">${round((current.roleMastery + current.instructionMastery) / 2, 0)} mastery</span>` : `<span class="badge blue">Tracked</span>`}
+        </div>
+        ${current ? `
+          <span>${escapeHtml(current.roleLabel)} | ${escapeHtml(current.instructionLabel)}</span>
+          ${bar((current.roleFit + current.instructionFit) / 2, current.roleFit >= 72 && current.instructionFit >= 72 ? "green" : current.roleFit >= 58 && current.instructionFit >= 58 ? "blue" : "amber")}
+          <div class="loan-fit-metrics">
+            <span>Role fit ${current.roleFit}</span>
+            <span>Instruction fit ${current.instructionFit}</span>
+            <span>${positionBadge(current.position)}</span>
+          </div>
+        ` : `
+          <span>${bestRole ? `${escapeHtml(bestRole.label)} ${round(bestRole.mastery, 0)}` : "No active role yet"} | ${bestInstruction ? `${escapeHtml(bestInstruction.label)} ${round(bestInstruction.mastery, 0)}` : "Balanced"}</span>
+        `}
+        ${report.events.length ? `
+          <div class="compact-timeline">
+            ${report.events.slice(0, 3).map((item) => `
+              <div class="timeline-item">
+                <strong>${item.date ? escapeHtml(Engine.formatGameDate(item.date)) : "-"}</strong>
+                <span>${escapeHtml(item.label)} ${round(item.mastery, 0)} mastery</span>
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
       </div>
     `;
   }
@@ -3331,6 +3398,13 @@
     }
     if (target.dataset.action === "set-tactical-role") {
       const result = Engine.setTacticalRole(state, state.activeClubId, target.dataset.slotIndex, target.value);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (target.dataset.action === "set-player-instruction") {
+      const result = Engine.setPlayerInstruction(state, state.activeClubId, target.dataset.slotIndex, target.value);
       Storage.save(state);
       toast(result.message, result.ok ? "good" : "bad");
       render();

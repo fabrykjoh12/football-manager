@@ -100,6 +100,7 @@ function run() {
   assert.ok(migratedLegacy.europe && migratedLegacy.europe.competition.rounds.length > 0, "Migration should backfill European competition state");
   assert.ok(migratedLegacy.academy.prospects.length > 0, "Migration should backfill academy state");
   assert.ok(migratedLegacy.loanClubs && migratedLegacy.loanClubs.length >= 4, "Migration should backfill youth loan destinations");
+  assert.equal(Object.keys(migratedLegacy.league.clubs[0].playerInstructions).length, 11, "Migration should backfill player instruction slots");
   assert.equal(migratedLegacy.players[saka.id].potential, 90, "Migration should reapply matched player potentials");
 
   const academySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 3030 });
@@ -176,6 +177,24 @@ function run() {
   const tacticalRoleChange = Engine.setTacticalRole(save, activeClub.id, editableRoleSlot.slotIndex, alternativeRole.key);
   assert.equal(tacticalRoleChange.ok, true, "Tactical roles should be editable by slot");
   assert.equal(activeClub.roleAssignments[String(editableRoleSlot.slotIndex)], alternativeRole.key, "Role assignment should persist on the club");
+  assert.ok(roleReport.slots.every((slot) => slot.instructionOptions.length > 0), "Tactical role reports should expose player instruction options");
+  const editableInstructionSlot = Engine.tacticalRoleReport(save, activeClub.id).slots.find((slot) => slot.instructionOptions.some((option) => option.key !== slot.instructionKey));
+  assert.ok(editableInstructionSlot, "At least one tactical slot should have alternative instruction options");
+  const alternativeInstruction = editableInstructionSlot.instructionOptions.find((option) => option.key !== editableInstructionSlot.instructionKey);
+  const beforeInstructionStrength = Engine.teamStrength(save, activeClub.id);
+  const instructionChange = Engine.setPlayerInstruction(save, activeClub.id, editableInstructionSlot.slotIndex, alternativeInstruction.key);
+  assert.equal(instructionChange.ok, true, "Player instructions should be editable by slot");
+  assert.equal(activeClub.playerInstructions[String(editableInstructionSlot.slotIndex)], alternativeInstruction.key, "Instruction assignment should persist on the club");
+  const afterInstructionReport = Engine.tacticalRoleReport(save, activeClub.id);
+  assert.ok(afterInstructionReport.averageInstructionFit > 0, "Instruction fit should be reported");
+  const afterInstructionStrength = Engine.teamStrength(save, activeClub.id);
+  assert.notDeepEqual(afterInstructionStrength, beforeInstructionStrength, "Player instructions should influence team strength");
+  const instructedPlayer = Engine.getPlayer(save, activeClub.lineup[editableInstructionSlot.slotIndex]);
+  const roleDevBefore = Engine.roleDevelopmentReport(save, instructedPlayer.id);
+  const masteryBefore = roleDevBefore.current.instructionMastery;
+  Engine.simulateNextDay(save);
+  const roleDevAfter = Engine.roleDevelopmentReport(save, instructedPlayer.id);
+  assert.ok(roleDevAfter.current.instructionMastery >= masteryBefore, "Daily training should improve instruction mastery");
   assert.equal(Engine.autoSetTacticalRoles(save, activeClub.id).ok, true, "Auto roles should match duties to the current XI");
   const tactic = Engine.setTactic(save, activeClub.id, "pressing", "high");
   assert.equal(tactic.ok, true, "Tactic settings should be editable");
@@ -409,6 +428,7 @@ function run() {
   assert.ok(Array.isArray(roundResult.activeMatch.substitutions), "Deep match engine should return substitutions");
   assert.ok(roundResult.activeMatch.analysis.summary, "Deep match engine should explain the result");
   assert.ok(roundResult.activeMatch.stats.passAccuracy.home >= 55, "Tactics should preserve plausible passing stats");
+  assert.ok(Number.isFinite(roundResult.activeMatch.teamPhaseStrengths.home.instructionCohesion), "Deep match engine should expose instruction cohesion");
 
   const subSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 2468 });
   const subClub = Engine.getClub(subSave, subSave.activeClubId);

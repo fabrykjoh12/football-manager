@@ -3,7 +3,7 @@
 
   const Data = global.FMLData || (typeof require !== "undefined" ? require("./data.js") : null);
   const MatchEngine = global.FMLMatchEngine || (typeof require !== "undefined" ? require("./match-engine.js") : null);
-  const VERSION = "1.11.0";
+  const VERSION = "1.12.0";
   const BENCH_SIZE = 7;
   const BASE_SEASON_YEAR = 2026;
   const TRAINING_FOCUS = {
@@ -379,6 +379,96 @@
       positions: ["ST"],
       attributes: ["heading", "jumping", "strength", "firstTouch", "composure", "finishing"],
       phases: { attack: 0.75, midfield: 0.25 }
+    }
+  };
+  const PLAYER_INSTRUCTIONS = {
+    balanced: {
+      label: "Balanced",
+      description: "Follow the role without extra risk or restrictions.",
+      positions: ["*"],
+      attributes: ["decisions", "teamwork", "concentration"],
+      phases: {},
+      matchPhases: {},
+      load: 0,
+      risk: 0,
+      difficulty: 0.8
+    },
+    stayBack: {
+      label: "Stay Back",
+      description: "Hold a safer position and prioritise defensive rest shape.",
+      positions: ["RB", "LB", "CB", "DM", "CM"],
+      attributes: ["positioning", "concentration", "tackling", "decisions"],
+      phases: { defense: 0.75, attack: -0.35, midfield: 0.08 },
+      matchPhases: { defensiveStability: 2.2, chancePrevention: 1.6, defensiveTransition: 1.8, attackStrength: -1.1, wideThreat: -0.8 },
+      load: -0.06,
+      risk: -0.05,
+      difficulty: 1
+    },
+    getForward: {
+      label: "Get Forward",
+      description: "Arrive higher, support attacks, and accept transition risk.",
+      positions: ["RB", "LB", "DM", "CM", "AM", "RW", "LW", "ST"],
+      attributes: ["offTheBall", "stamina", "pace", "decisions", "finishing"],
+      phases: { attack: 0.82, midfield: 0.22, defense: -0.42 },
+      matchPhases: { attackStrength: 2.4, chanceCreation: 1.6, attackingTransition: 1.4, defensiveTransition: -1.4, chancePrevention: -0.8 },
+      load: 0.12,
+      risk: 0.12,
+      difficulty: 1.15
+    },
+    pressMore: {
+      label: "Press More",
+      description: "Jump to press and force rushed passes in nearby zones.",
+      positions: ["RB", "LB", "CB", "DM", "CM", "AM", "RW", "LW", "ST"],
+      attributes: ["workRate", "stamina", "aggression", "pace", "decisions"],
+      phases: { midfield: 0.42, defense: 0.35, attack: 0.18 },
+      matchPhases: { pressingStrength: 3.4, counterAttackThreat: 1.1, defensiveTransition: 0.7, fitness: -1.2, chemistry: -0.25 },
+      load: 0.2,
+      risk: 0.16,
+      difficulty: 1.18
+    },
+    conserveEnergy: {
+      label: "Conserve Energy",
+      description: "Reduce pressing and sprint volume to preserve late fitness.",
+      positions: ["*"],
+      attributes: ["decisions", "positioning", "teamwork", "naturalFitness"],
+      phases: { defense: 0.16, midfield: -0.18, attack: -0.1 },
+      matchPhases: { fitness: 2.2, defensiveStability: 0.7, pressingStrength: -2.4, attackingTransition: -0.8 },
+      load: -0.18,
+      risk: -0.12,
+      difficulty: 0.9
+    },
+    holdWidth: {
+      label: "Hold Width",
+      description: "Stay wide to stretch the pitch and protect the touchline.",
+      positions: ["RB", "LB", "RW", "LW"],
+      attributes: ["crossing", "stamina", "positioning", "pace", "teamwork"],
+      phases: { attack: 0.38, midfield: 0.28, defense: 0.12 },
+      matchPhases: { wideThreat: 3.2, defensiveWidth: 2, chanceCreation: 0.8, centralThreat: -0.7 },
+      load: 0.08,
+      risk: 0.04,
+      difficulty: 1
+    },
+    roam: {
+      label: "Roam",
+      description: "Find pockets away from the assigned lane and connect play.",
+      positions: ["CM", "AM", "RW", "LW", "ST"],
+      attributes: ["offTheBall", "vision", "dribbling", "flair", "decisions"],
+      phases: { attack: 0.55, midfield: 0.42, defense: -0.28 },
+      matchPhases: { chanceCreation: 2.2, centralThreat: 1.6, buildUpQuality: 1, chemistry: -0.6, defensiveTransition: -0.7 },
+      load: 0.08,
+      risk: 0.16,
+      difficulty: 1.25
+    },
+    takeMoreRisks: {
+      label: "Take Risks",
+      description: "Attempt harder passes, carries, and aggressive final actions.",
+      positions: ["CB", "DM", "CM", "AM", "RW", "LW", "ST"],
+      attributes: ["vision", "passing", "technique", "composure", "decisions"],
+      phases: { attack: 0.62, midfield: 0.32, defense: -0.18 },
+      matchPhases: { chanceCreation: 2.6, buildUpQuality: 1.4, centralThreat: 1.1, chancePrevention: -0.7, defensiveTransition: -0.5 },
+      load: 0.05,
+      risk: 0.22,
+      difficulty: 1.35
     }
   };
   const ACADEMY_PLANS = {
@@ -1331,6 +1421,7 @@
       bench: [],
       formation,
       roleAssignments: defaultRoleAssignments(formation),
+      playerInstructions: defaultPlayerInstructions(formation),
       tactics: defaultTactics(index + 7),
       staff: defaultStaffRoom(template, index + 20),
       trainingPlan: "balanced",
@@ -1397,6 +1488,7 @@
       club.tactics = normalizeTactics(club.tactics);
       club.roleAssignments = club.roleAssignments || defaultRoleAssignments(club.formation);
       normalizeRoleAssignments(club);
+      normalizePlayerInstructions(club);
       normalizeTrainingSetup(club);
       normalizeStaffRoom(club, index + 20);
       club.seasonFinance = {
@@ -2876,6 +2968,7 @@
         bench: [],
         formation,
         roleAssignments: defaultRoleAssignments(formation),
+        playerInstructions: defaultPlayerInstructions(formation),
         tactics: defaultTactics(index),
         staff: defaultStaffRoom(template, index),
         trainingPlan: "balanced",
@@ -3144,6 +3237,7 @@
     if (!club || !Data.FORMATIONS[formation]) return;
     club.formation = formation;
     club.roleAssignments = defaultRoleAssignments(formation);
+    club.playerInstructions = defaultPlayerInstructions(formation);
     club.lineup = autoSelectLineup(state, clubId);
     club.bench = autoSelectBench(state, clubId);
   }
@@ -3369,6 +3463,10 @@
     return TACTICAL_ROLES[roleKey] ? TACTICAL_ROLES[roleKey].label : roleKey || "-";
   }
 
+  function playerInstructionLabel(instructionKey) {
+    return PLAYER_INSTRUCTIONS[instructionKey] ? PLAYER_INSTRUCTIONS[instructionKey].label : PLAYER_INSTRUCTIONS.balanced.label;
+  }
+
   function isRoleValidForPosition(roleKey, position) {
     const role = TACTICAL_ROLES[roleKey];
     return !!(role && role.positions.includes(position));
@@ -3380,10 +3478,33 @@
       .map((key) => ({ key, ...TACTICAL_ROLES[key] }));
   }
 
+  function isInstructionValidForPosition(instructionKey, position) {
+    const instruction = PLAYER_INSTRUCTIONS[instructionKey];
+    return !!(instruction && (instruction.positions.includes("*") || instruction.positions.includes(position) || instruction.positions.includes(positionBand(position))));
+  }
+
+  function instructionOptionsForPosition(position) {
+    return Object.keys(PLAYER_INSTRUCTIONS)
+      .filter((key) => isInstructionValidForPosition(key, position))
+      .map((key) => ({ key, ...PLAYER_INSTRUCTIONS[key] }));
+  }
+
   function defaultRoleAssignments(formation) {
     const slots = Data.FORMATIONS[formation] || Data.FORMATIONS["4-3-3"];
     return slots.reduce((assignments, position, index) => {
       assignments[String(index)] = defaultRoleForSlot(position);
+      return assignments;
+    }, {});
+  }
+
+  function defaultInstructionForSlot(position) {
+    return "balanced";
+  }
+
+  function defaultPlayerInstructions(formation) {
+    const slots = Data.FORMATIONS[formation] || Data.FORMATIONS["4-3-3"];
+    return slots.reduce((assignments, position, index) => {
+      assignments[String(index)] = defaultInstructionForSlot(position);
       return assignments;
     }, {});
   }
@@ -3401,9 +3522,59 @@
     return club.roleAssignments;
   }
 
+  function normalizePlayerInstructions(club) {
+    if (!club) return {};
+    const slots = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
+    const current = club.playerInstructions || {};
+    const normalized = {};
+    slots.forEach((position, index) => {
+      const existing = current[String(index)];
+      normalized[String(index)] = isInstructionValidForPosition(existing, position) ? existing : defaultInstructionForSlot(position);
+    });
+    club.playerInstructions = normalized;
+    return club.playerInstructions;
+  }
+
   function averageRoleAttributes(player, role) {
     const values = (role.attributes || []).map((key) => player.attributes && Number(player.attributes[key])).filter(Number.isFinite);
     return values.length ? average(values) : player.currentAbility || 50;
+  }
+
+  function normalizeRoleDevelopment(player) {
+    player.roleDevelopment = player.roleDevelopment || {};
+    player.roleDevelopment.roles = player.roleDevelopment.roles || {};
+    player.roleDevelopment.instructions = player.roleDevelopment.instructions || {};
+    player.roleDevelopment.events = Array.isArray(player.roleDevelopment.events) ? player.roleDevelopment.events : [];
+    player.roleDevelopment.lastAdviceDay = Number.isFinite(player.roleDevelopment.lastAdviceDay) ? player.roleDevelopment.lastAdviceDay : -999;
+    return player.roleDevelopment;
+  }
+
+  function developmentEntry(container, key, baseline) {
+    container[key] = container[key] || {
+      mastery: baseline,
+      sessions: 0,
+      matches: 0,
+      lastMilestone: Math.floor(baseline / 20) * 20
+    };
+    container[key].mastery = round(clamp(container[key].mastery, 1, 100), 1);
+    container[key].sessions = container[key].sessions || 0;
+    container[key].matches = container[key].matches || 0;
+    container[key].lastMilestone = container[key].lastMilestone || Math.floor(container[key].mastery / 20) * 20;
+    return container[key];
+  }
+
+  function roleMastery(player, roleKey) {
+    if (!player || !roleKey) return 50;
+    normalizeRoleDevelopment(player);
+    const baseline = round(clamp(34 + (player.currentAbility || 58) * 0.24 + (player.age <= 21 ? 5 : 0), 28, 72), 1);
+    return developmentEntry(player.roleDevelopment.roles, roleKey, baseline).mastery;
+  }
+
+  function instructionMastery(player, instructionKey) {
+    if (!player || !instructionKey) return 50;
+    normalizeRoleDevelopment(player);
+    const baseline = instructionKey === "balanced" ? 74 : round(clamp(32 + (player.currentAbility || 58) * 0.2 + (player.age <= 21 ? 4 : 0), 24, 66), 1);
+    return developmentEntry(player.roleDevelopment.instructions, instructionKey, baseline).mastery;
   }
 
   function playerRoleFit(player, roleKey, slot) {
@@ -3416,7 +3587,62 @@
     const positionBonus = direct ? 8 : secondary ? 3 : bandFit ? -4 : player.position === "GK" || role.positions.includes("GK") ? -28 : -12;
     const profile = averageRoleAttributes(player, role);
     const availability = player.fitness * 0.035 + player.sharpness * 0.035 + player.morale * 0.015;
-    return Math.round(clamp(profile + positionBonus + slotBonus + availability - 5, 1, 100));
+    const mastery = roleMastery(player, roleKey);
+    return Math.round(clamp(profile + positionBonus + slotBonus + availability + (mastery - 50) * 0.12 - 5, 1, 100));
+  }
+
+  function playerInstructionFit(player, instructionKey, slot, roleKey) {
+    const instruction = PLAYER_INSTRUCTIONS[instructionKey] || PLAYER_INSTRUCTIONS.balanced;
+    if (!player || !instruction) return 0;
+    if (!isInstructionValidForPosition(instructionKey, slot || player.position)) return 0;
+    const values = (instruction.attributes || []).map((key) => player.attributes && Number(player.attributes[key])).filter(Number.isFinite);
+    const profile = values.length ? average(values) : player.currentAbility || 58;
+    const mastery = instructionMastery(player, instructionKey);
+    const roleFit = roleKey ? playerRoleFit(player, roleKey, slot || player.position) : 62;
+    const workloadFit = instruction.load > 0 ? averageExisting(player.attributes || {}, ["stamina", "workRate", "naturalFitness"], 58) : 64;
+    const riskControl = instruction.risk > 0 ? averageExisting(player.attributes || {}, ["decisions", "composure", "concentration"], 58) : 64;
+    return Math.round(clamp(profile * 0.46 + mastery * 0.22 + roleFit * 0.18 + workloadFit * 0.08 + riskControl * 0.06, 1, 100));
+  }
+
+  function instructionEffectScale(player, instructionKey, slot, roleKey) {
+    const instruction = PLAYER_INSTRUCTIONS[instructionKey] || PLAYER_INSTRUCTIONS.balanced;
+    if (!player || instructionKey === "balanced") return 0;
+    const fit = playerInstructionFit(player, instructionKey, slot, roleKey);
+    const mastery = instructionMastery(player, instructionKey);
+    return clamp(0.24 + fit / 135 + mastery / 210 - (instruction.difficulty || 1) * 0.08, fit < 45 ? 0.08 : 0.28, 1.25);
+  }
+
+  function instructionPhaseBonus(player, instructionKey, phase, slot, roleKey) {
+    const instruction = PLAYER_INSTRUCTIONS[instructionKey] || PLAYER_INSTRUCTIONS.balanced;
+    if (!instruction || !instruction.phases || !instruction.phases[phase]) return 0;
+    return instruction.phases[phase] * instructionEffectScale(player, instructionKey, slot, roleKey);
+  }
+
+  function instructionMatchPhaseModifiers(player, instructionKey, slot, roleKey) {
+    const instruction = PLAYER_INSTRUCTIONS[instructionKey] || PLAYER_INSTRUCTIONS.balanced;
+    const scale = instructionEffectScale(player, instructionKey, slot, roleKey);
+    const modifiers = {};
+    Object.entries(instruction.matchPhases || {}).forEach(([phase, value]) => {
+      modifiers[phase] = round(value * scale, 2);
+    });
+    return modifiers;
+  }
+
+  function instructionLoadModifier(player, instructionKey, slot, roleKey) {
+    const instruction = PLAYER_INSTRUCTIONS[instructionKey] || PLAYER_INSTRUCTIONS.balanced;
+    if (!instruction || instructionKey === "balanced") return 0;
+    return round(instruction.load * instructionEffectScale(player, instructionKey, slot, roleKey), 3);
+  }
+
+  function instructionExecutionLift(player, instructionKey, slot, roleKey) {
+    const instruction = PLAYER_INSTRUCTIONS[instructionKey] || PLAYER_INSTRUCTIONS.balanced;
+    if (!player || !instruction || instructionKey === "balanced") return 0;
+    const fit = playerInstructionFit(player, instructionKey, slot, roleKey);
+    const mastery = instructionMastery(player, instructionKey);
+    const riskPenalty = Math.max(0, instruction.risk || 0) * 0.35;
+    const loadPenalty = Math.max(0, instruction.load || 0) * 0.45;
+    const conservationLift = instruction.load < 0 ? 0.08 : 0;
+    return round(clamp((fit - 62) * 0.018 + (mastery - 50) * 0.012 + conservationLift - riskPenalty - loadPenalty, -1.4, 1.2), 3);
   }
 
   function roleFitTone(fit) {
@@ -3447,22 +3673,35 @@
     const position = formation[slotIndex];
     if (!position) return null;
     normalizeRoleAssignments(club);
+    normalizePlayerInstructions(club);
     const lineup = ensureLineup(state, club.id);
     const player = state.players[lineup[slotIndex]];
     const roleKey = club.roleAssignments[String(slotIndex)] || defaultRoleForSlot(position);
+    const instructionKey = club.playerInstructions[String(slotIndex)] || defaultInstructionForSlot(position);
     const role = TACTICAL_ROLES[roleKey] || TACTICAL_ROLES[defaultRoleForSlot(position)];
     const fit = player ? playerRoleFit(player, roleKey, position) : 0;
+    const instructionFit = player ? playerInstructionFit(player, instructionKey, position, roleKey) : 0;
     return {
       slotIndex,
       position,
       roleKey,
       roleLabel: role.label,
       description: role.description,
+      instructionKey,
+      instructionLabel: playerInstructionLabel(instructionKey),
+      instructionDescription: PLAYER_INSTRUCTIONS[instructionKey] ? PLAYER_INSTRUCTIONS[instructionKey].description : "",
       playerId: player ? player.id : null,
       playerName: player ? playerDisplayName(player) : "Empty",
       fit,
       tone: roleFitTone(fit),
-      options: roleOptionsForPosition(position)
+      instructionFit,
+      instructionTone: roleFitTone(instructionFit),
+      roleMastery: player ? roleMastery(player, roleKey) : 0,
+      instructionMastery: player ? instructionMastery(player, instructionKey) : 0,
+      instructionLoad: player ? instructionLoadModifier(player, instructionKey, position, roleKey) : 0,
+      instructionModifiers: player ? instructionMatchPhaseModifiers(player, instructionKey, position, roleKey) : {},
+      options: roleOptionsForPosition(position),
+      instructionOptions: instructionOptionsForPosition(position)
     };
   }
 
@@ -3473,9 +3712,13 @@
     const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
     const slots = formation.map((_, index) => roleFitForSlot(state, club, index)).filter(Boolean);
     const weakFits = slots.filter((slot) => slot.fit < 58);
+    const instructionWarnings = slots.filter((slot) => slot.instructionKey !== "balanced" && slot.instructionFit < 58);
     const phaseBias = slots.reduce((bias, slot) => {
       const role = TACTICAL_ROLES[slot.roleKey];
       Object.entries(role && role.phases ? role.phases : {}).forEach(([phase, value]) => {
+        bias[phase] = round((bias[phase] || 0) + value, 2);
+      });
+      Object.entries(slot.instructionModifiers || {}).forEach(([phase, value]) => {
         bias[phase] = round((bias[phase] || 0) + value, 2);
       });
       return bias;
@@ -3483,7 +3726,9 @@
     return {
       formation: club.formation,
       averageFit: round(average(slots.map((slot) => slot.fit)), 1),
+      averageInstructionFit: round(average(slots.map((slot) => slot.instructionFit || 0)), 1),
       weakFits,
+      instructionWarnings,
       slots,
       phaseBias
     };
@@ -3501,6 +3746,118 @@
     normalizeRoleAssignments(club);
     club.roleAssignments[String(index)] = roleKey;
     return { ok: true, message: `${position} role set to ${tacticalRoleLabel(roleKey)}.` };
+  }
+
+  function setPlayerInstruction(state, clubId, slotIndex, instructionKey) {
+    const club = getClub(state, clubId);
+    const index = Number(slotIndex);
+    if (!club || !Number.isInteger(index)) return { ok: false, message: "Instruction slot unavailable." };
+    const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
+    const position = formation[index];
+    if (!position || !isInstructionValidForPosition(instructionKey, position)) {
+      return { ok: false, message: "Instruction does not fit this position." };
+    }
+    normalizePlayerInstructions(club);
+    club.playerInstructions[String(index)] = instructionKey;
+    return { ok: true, message: `${position} instruction set to ${playerInstructionLabel(instructionKey)}.` };
+  }
+
+  function playerRoleSlotContext(state, playerId, clubId) {
+    const club = getClub(state, clubId || (state.players[playerId] && state.players[playerId].clubId));
+    if (!club) return null;
+    normalizeRoleAssignments(club);
+    normalizePlayerInstructions(club);
+    const lineup = ensureLineup(state, club.id);
+    const slotIndex = lineup.indexOf(playerId);
+    if (slotIndex < 0) return null;
+    const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
+    const position = formation[slotIndex];
+    const roleKey = club.roleAssignments[String(slotIndex)] || defaultRoleForSlot(position);
+    const instructionKey = club.playerInstructions[String(slotIndex)] || defaultInstructionForSlot(position);
+    return {
+      club,
+      slotIndex,
+      position,
+      roleKey,
+      instructionKey
+    };
+  }
+
+  function improveMasteryEntry(state, player, group, key, amount, source, label) {
+    normalizeRoleDevelopment(player);
+    const container = group === "role" ? player.roleDevelopment.roles : player.roleDevelopment.instructions;
+    const baseline = group === "role"
+      ? round(clamp(34 + (player.currentAbility || 58) * 0.24 + (player.age <= 21 ? 5 : 0), 28, 72), 1)
+      : key === "balanced" ? 74 : round(clamp(32 + (player.currentAbility || 58) * 0.2 + (player.age <= 21 ? 4 : 0), 24, 66), 1);
+    const entry = developmentEntry(container, key, baseline);
+    const before = entry.mastery;
+    const ageFactor = player.age <= 21 ? 1.18 : player.age <= 25 ? 1.05 : player.age >= 31 ? 0.78 : 0.95;
+    const ceilingFactor = clamp((103 - before) / 55, 0.18, 1.15);
+    entry.mastery = round(clamp(before + amount * ageFactor * ceilingFactor, 1, 100), 1);
+    if (source === "match") entry.matches += 1;
+    else entry.sessions += 1;
+    const beforeBand = Math.floor(before / 20) * 20;
+    const afterBand = Math.floor(entry.mastery / 20) * 20;
+    if (afterBand > beforeBand && entry.mastery >= 60 && afterBand > (entry.lastMilestone || 0)) {
+      entry.lastMilestone = afterBand;
+      const event = {
+        date: state.calendar ? state.calendar.currentDate : null,
+        type: "role-milestone",
+        source,
+        group,
+        key,
+        label,
+        mastery: entry.mastery
+      };
+      player.roleDevelopment.events.unshift(event);
+      player.roleDevelopment.events = player.roleDevelopment.events.slice(0, 12);
+      return event;
+    }
+    return null;
+  }
+
+  function improveRoleDevelopment(state, player, context, amount, source) {
+    if (!player || !context) return null;
+    const roleEvent = improveMasteryEntry(state, player, "role", context.roleKey, amount, source, tacticalRoleLabel(context.roleKey));
+    const instructionEvent = improveMasteryEntry(state, player, "instruction", context.instructionKey, amount * 0.88, source, playerInstructionLabel(context.instructionKey));
+    return roleEvent || instructionEvent;
+  }
+
+  function roleDevelopmentReport(state, playerId) {
+    const player = getPlayer(state, playerId);
+    if (!player) return null;
+    normalizeRoleDevelopment(player);
+    const context = playerRoleSlotContext(state, player.id, player.clubId) || null;
+    const roles = Object.entries(player.roleDevelopment.roles || {}).map(([key, entry]) => ({
+      key,
+      label: tacticalRoleLabel(key),
+      mastery: round(entry.mastery || 0, 1),
+      matches: entry.matches || 0,
+      sessions: entry.sessions || 0
+    })).sort((a, b) => b.mastery - a.mastery);
+    const instructions = Object.entries(player.roleDevelopment.instructions || {}).map(([key, entry]) => ({
+      key,
+      label: playerInstructionLabel(key),
+      mastery: round(entry.mastery || 0, 1),
+      matches: entry.matches || 0,
+      sessions: entry.sessions || 0
+    })).sort((a, b) => b.mastery - a.mastery);
+    const current = context ? {
+      ...context,
+      roleLabel: tacticalRoleLabel(context.roleKey),
+      instructionLabel: playerInstructionLabel(context.instructionKey),
+      roleFit: playerRoleFit(player, context.roleKey, context.position),
+      instructionFit: playerInstructionFit(player, context.instructionKey, context.position, context.roleKey),
+      roleMastery: roleMastery(player, context.roleKey),
+      instructionMastery: instructionMastery(player, context.instructionKey)
+    } : null;
+    return {
+      playerId: player.id,
+      current,
+      roles,
+      instructions,
+      events: player.roleDevelopment.events || []
+    };
   }
 
   function autoSetTacticalRoles(state, clubId) {
@@ -3554,6 +3911,7 @@
     };
     player.promises = player.promises || {};
     player.loanDevelopment = player.loanDevelopment || null;
+    normalizeRoleDevelopment(player);
     return player;
   }
 
@@ -3747,23 +4105,27 @@
     if (!club) return { attack: 50, midfield: 50, defense: 50, keeper: 50, overall: 50 };
     const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
     normalizeRoleAssignments(club);
+    normalizePlayerInstructions(club);
     const lineup = ensureLineup(state, clubId)
-      .map((id, index) => ({ player: state.players[id], slot: formation[index], roleKey: club.roleAssignments[String(index)] }))
+      .map((id, index) => ({ player: state.players[id], slot: formation[index], roleKey: club.roleAssignments[String(index)], instructionKey: club.playerInstructions[String(index)] }))
       .filter((item) => item.player);
     const attackers = lineup.filter((item) => ["ST", "LW", "RW", "AM"].includes(item.slot));
     const midfielders = lineup.filter((item) => ["DM", "CM", "AM"].includes(item.slot));
     const defenders = lineup.filter((item) => ["RB", "LB", "CB", "DM"].includes(item.slot));
     const keepers = lineup.filter((item) => item.slot === "GK");
-    const attack = average((attackers.length ? attackers : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "attack", item.roleKey)));
-    const midfield = average((midfielders.length ? midfielders : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "midfield", item.roleKey)));
-    const defense = average((defenders.length ? defenders : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "defense", item.roleKey)));
-    const keeper = average((keepers.length ? keepers : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "keeper", item.roleKey)));
+    const attack = average((attackers.length ? attackers : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "attack", item.roleKey, item.instructionKey)));
+    const midfield = average((midfielders.length ? midfielders : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "midfield", item.roleKey, item.instructionKey)));
+    const defense = average((defenders.length ? defenders : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "defense", item.roleKey, item.instructionKey)));
+    const keeper = average((keepers.length ? keepers : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "keeper", item.roleKey, item.instructionKey)));
     const overall = attack * 0.28 + midfield * 0.28 + defense * 0.28 + keeper * 0.16;
     return { attack, midfield, defense, keeper, overall };
   }
 
-  function adjustedRoleScore(player, slot, role, tacticalRoleKey) {
-    return roleScore(player, role) - slotPenalty(player, slot) + rolePhaseBonus(player, tacticalRoleKey, role, slot);
+  function adjustedRoleScore(player, slot, role, tacticalRoleKey, instructionKey) {
+    const masteryLift = (roleMastery(player, tacticalRoleKey) - 50) * 0.025;
+    const instructionKeySafe = instructionKey || "balanced";
+    const instructionLift = instructionPhaseBonus(player, instructionKeySafe, role, slot, tacticalRoleKey) + instructionExecutionLift(player, instructionKeySafe, slot, tacticalRoleKey);
+    return roleScore(player, role) - slotPenalty(player, slot) + rolePhaseBonus(player, tacticalRoleKey, role, slot) + masteryLift + instructionLift;
   }
 
   function slotPenalty(player, slot) {
@@ -4065,8 +4427,26 @@
 
   function lineupContext(state, club) {
     const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
+    normalizeRoleAssignments(club);
+    normalizePlayerInstructions(club);
     return ensureLineup(state, club.id)
-      .map((id, index) => ({ player: state.players[id], slot: formation[index] || (state.players[id] ? state.players[id].position : "CM") }))
+      .map((id, index) => {
+        const player = state.players[id];
+        const slot = formation[index] || (player ? player.position : "CM");
+        const roleKey = club.roleAssignments[String(index)] || defaultRoleForSlot(slot);
+        const instructionKey = club.playerInstructions[String(index)] || defaultInstructionForSlot(slot);
+        return {
+          player,
+          slot,
+          roleKey,
+          instructionKey,
+          instructionLabel: playerInstructionLabel(instructionKey),
+          instructionFit: player ? playerInstructionFit(player, instructionKey, slot, roleKey) : 0,
+          instructionMastery: player ? instructionMastery(player, instructionKey) : 0,
+          instructionLoad: player ? instructionLoadModifier(player, instructionKey, slot, roleKey) : 0,
+          instructionPhases: player ? instructionMatchPhaseModifiers(player, instructionKey, slot, roleKey) : {}
+        };
+      })
       .filter((item) => item.player);
   }
 
@@ -4321,6 +4701,7 @@
     const awayClub = getClub(state, fixture.awayClubId);
     const homeWon = fixture.homeGoals > fixture.awayGoals;
     const awayWon = fixture.awayGoals > fixture.homeGoals;
+    let roleMilestoneNotified = false;
     pushForm(homeClub, homeWon ? "W" : awayWon ? "L" : "D");
     pushForm(awayClub, awayWon ? "W" : homeWon ? "L" : "D");
     if (!fixture.competitionType) updateBiggestWinRecord(state, fixture);
@@ -4371,6 +4752,15 @@
       player.fitness = Math.round(clamp(player.fitness - randomInt(state, 5, 13) - tactical.fatigue, 30, 100));
       player.sharpness = Math.round(clamp(player.sharpness + randomInt(state, 2, 8), 0, 100));
       player.morale = Math.round(clamp(player.morale + (rating.rating >= 7 ? 3 : rating.rating < 6 ? -3 : 0), 0, 100));
+      const roleContext = playerRoleSlotContext(state, player.id, player.clubId);
+      if (roleContext && minutesPlayed > 0) {
+        const masteryGain = 0.28 + minutesPlayed / 210 + Math.max(0, rating.rating - 6.5) * 0.18;
+        const milestone = improveRoleDevelopment(state, player, roleContext, masteryGain, "match");
+        if (milestone && !roleMilestoneNotified && player.clubId === state.activeClubId) {
+          roleMilestoneNotified = true;
+          addInbox(state, "Role Milestone", `${player.name} reached ${Math.round(milestone.mastery)} mastery in ${milestone.label} after the match.`);
+        }
+      }
       if ((player.clubId === fixture.homeClubId && fixture.awayGoals === 0) || (player.clubId === fixture.awayClubId && fixture.homeGoals === 0)) {
         if (["GK", "RB", "CB", "LB"].includes(player.position)) {
           player.seasonStats.cleanSheets += 1;
@@ -5028,6 +5418,45 @@
     return event;
   }
 
+  function processRoleDevelopmentDaily(state) {
+    if (!state.calendar) return null;
+    let event = null;
+    allCompetitionClubs(state).forEach((club) => {
+      normalizeRoleAssignments(club);
+      normalizePlayerInstructions(club);
+      const staff = staffEffectsForClub(state, club.id);
+      const tacticalPlanLift = club.trainingPlan === "tactical" ? 0.16 : club.matchPrep !== "balanced" ? 0.08 : 0;
+      const base = (0.13 + tacticalPlanLift) * staff.familiarityMultiplier;
+      const lineup = ensureLineup(state, club.id);
+      lineup.forEach((playerId, slotIndex) => {
+        const player = getPlayer(state, playerId);
+        if (!player) return;
+        const context = playerRoleSlotContext(state, player.id, club.id);
+        if (!context) return;
+        const gain = base * (player.individualPlan === "extra" ? 1.16 : player.individualPlan === "recovery" ? 0.7 : 1);
+        const milestone = improveRoleDevelopment(state, player, context, gain, "training");
+        if (!event && milestone && club.id === state.activeClubId) {
+          addInbox(state, "Role Development", `${player.name} reached ${Math.round(milestone.mastery)} mastery in ${milestone.label}.`);
+          event = { type: "role-development", title: "Role Development", playerId: player.id };
+        }
+      });
+    });
+
+    const activeClub = getClub(state, state.activeClubId);
+    if (activeClub) {
+      const day = state.calendar.day || 1;
+      const report = tacticalRoleReport(state, activeClub.id);
+      const issue = report && (report.instructionWarnings[0] || report.weakFits[0]);
+      if (issue && day - (activeClub.lastInstructionAdviceDay || -999) >= 18) {
+        activeClub.lastInstructionAdviceDay = day;
+        const player = issue.playerId ? getPlayer(state, issue.playerId) : null;
+        addInbox(state, "Staff Instruction Advice", player ? `${player.name} is not fully comfortable with ${issue.instructionLabel || issue.roleLabel}. Consider a simpler instruction or more tactical training.` : "Staff flagged an instruction mismatch in the match plan.");
+        event = event || { type: "role-advice", title: "Staff Instruction Advice", playerId: player ? player.id : null };
+      }
+    }
+    return event;
+  }
+
   function applyAcademyDevelopment(state, prospect, report) {
     normalizeAcademyProspect(state, prospect);
     const academy = ensureAcademyState(state);
@@ -5198,6 +5627,7 @@
     processTransferPreAgreements(state);
     recoverSquadsDaily(state);
     updateMatchPrepFamiliarity(state);
+    const roleDevelopmentEvent = processRoleDevelopmentDaily(state);
     const scoutingEvent = processScoutingAssignmentsDaily(state);
     const academyEvent = processAcademyDaily(state);
     const loanEvent = processOutgoingLoansDaily(state);
@@ -5208,7 +5638,7 @@
     const happinessEvent = processSquadHappinessDaily(state);
     const pathwayEvent = processPathwayPromisesDaily(state);
     const boardEvent = processBoardDaily(state);
-    if (clubEvent || happinessEvent || pathwayEvent || scoutingEvent || academyEvent || loanEvent || boardEvent || matchday.cupEvent || matchday.europeEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
+    if (clubEvent || happinessEvent || pathwayEvent || roleDevelopmentEvent || scoutingEvent || academyEvent || loanEvent || boardEvent || matchday.cupEvent || matchday.europeEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
 
     let seasonEnded = false;
     let seasonSummary = null;
@@ -5231,6 +5661,7 @@
       scoutingEvent,
       academyEvent,
       loanEvent,
+      roleDevelopmentEvent,
       boardEvent,
       pathwayEvent,
       cupEvent: matchday.cupEvent,
@@ -5261,7 +5692,7 @@
   function describeDayEvent(state, before, result) {
     if (result.activeMatch) return { type: "match", title: "Matchday", body: "The next match is ready." };
     if (result.seasonEnded) return { type: "season", title: "Season Complete", body: result.seasonSummary ? `${result.seasonSummary.championName} won the league.` : "The season has finished." };
-    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.europeEvent ? { type: result.europeEvent.type, title: result.europeEvent.title } : null) || (result.cupEvent ? { type: result.cupEvent.type, title: result.cupEvent.title } : null) || (result.boardEvent ? { type: result.boardEvent.type, title: result.boardEvent.title } : null) || (result.loanEvent ? { type: result.loanEvent.type, title: result.loanEvent.title } : null) || (result.pathwayEvent ? { type: result.pathwayEvent.type, title: result.pathwayEvent.title } : null) || (result.scoutingEvent ? { type: result.scoutingEvent.type, title: result.scoutingEvent.title } : null) || (result.academyEvent ? { type: result.academyEvent.type, title: result.academyEvent.title } : null) || (result.happinessEvent ? { type: result.happinessEvent.type, title: result.happinessEvent.title } : null) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
+    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.europeEvent ? { type: result.europeEvent.type, title: result.europeEvent.title } : null) || (result.cupEvent ? { type: result.cupEvent.type, title: result.cupEvent.title } : null) || (result.boardEvent ? { type: result.boardEvent.type, title: result.boardEvent.title } : null) || (result.loanEvent ? { type: result.loanEvent.type, title: result.loanEvent.title } : null) || (result.pathwayEvent ? { type: result.pathwayEvent.type, title: result.pathwayEvent.title } : null) || (result.roleDevelopmentEvent ? { type: result.roleDevelopmentEvent.type, title: result.roleDevelopmentEvent.title } : null) || (result.scoutingEvent ? { type: result.scoutingEvent.type, title: result.scoutingEvent.title } : null) || (result.academyEvent ? { type: result.academyEvent.type, title: result.academyEvent.title } : null) || (result.happinessEvent ? { type: result.happinessEvent.type, title: result.happinessEvent.title } : null) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
   }
 
   function simulateUntilNextEvent(state, options) {
@@ -8000,6 +8431,7 @@
       normalizeTrainingSetup(club);
       normalizeStaffRoom(club, index);
       normalizeRoleAssignments(club);
+      normalizePlayerInstructions(club);
       club.lineup = club.lineup || [];
       club.bench = club.bench || [];
     });
@@ -8087,6 +8519,7 @@
     YOUTH_LOAN_DESTINATIONS,
     STAFF_DEPARTMENTS,
     TACTICAL_ROLES,
+    PLAYER_INSTRUCTIONS,
     DOMESTIC_CUP_ROUNDS,
     EUROPEAN_ROUNDS,
     DEFAULT_TACTICS,
@@ -8120,9 +8553,14 @@
     roleOptionsForPosition,
     tacticalRoleLabel,
     playerRoleFit,
+    instructionOptionsForPosition,
+    playerInstructionLabel,
+    playerInstructionFit,
     tacticalRoleReport,
     setTacticalRole,
+    setPlayerInstruction,
     autoSetTacticalRoles,
+    roleDevelopmentReport,
     playerHappinessReport,
     squadHappinessReport,
     youthPathwayReport,
