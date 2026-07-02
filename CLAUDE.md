@@ -270,6 +270,21 @@ Design target:
 - Player profiles now show pathway promise progress and active/completed loan-development cards.
 - Regression tests cover loan destination migration, academy-promotion promises, outgoing youth loans, profile reports, and rollover promise resolution.
 
+### Individual Player Instructions + Role Milestones
+
+- New saves and migrated saves now store player instructions for every formation slot.
+- Instructions include Balanced, Stay Back, Get Forward, Press More, Conserve Energy, Hold Width, Roam, and Take Risks.
+- Instruction fit is scored from player attributes, role fit, mastery, workload tolerance, risk control, and position suitability.
+- Player instructions now affect team strength, deep match phase strengths, instruction cohesion, fatigue load, and player role ratings.
+- Role and instruction mastery grows through daily training and match minutes, with age, staff quality, training plan, and match rating influencing gains.
+- Role milestones create player role-development timeline entries and active-club inbox stories.
+- Daily staff advice can flag weak role fits or instruction mismatches before they become tactical problems.
+- Tactics screen now has per-slot role and instruction selectors, fit bars, mastery markers, load indicators, instruction fit metrics, and instruction warnings.
+- Player profiles now show a Role Development card with current role/instruction fit, mastery, and recent milestones.
+- Regression tests cover instruction migration, editing, team-strength impact, daily mastery growth, and deep-match instruction cohesion.
+- Browser QA covered desktop Tactics controls, player profile Role Development cards, console errors, and the profile overflow fix.
+- CSS polish fixed narrow profile progress bars and mobile nav hit-target overlap.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
@@ -287,20 +302,22 @@ Design target:
 - `06ceb1c` Add European qualification and Continental Cup
 - `ea324bc` Upgrade premium UI design system
 - `e4c6b13` Add youth loans and pathway promises
+- `75fec53` Add player instructions and role mastery
 
-The latest completed feature phase is Youth Loans + Pathway Promises.
+The latest completed feature phase is Individual Player Instructions + Role Milestones.
 
 ## Current Roadmap
 
-### Next Phase: Individual Player Instructions + Role Milestones
+### Next Phase: Matchday Tactical Management + Assistant Reports
 
 Planned work:
 
-- Individual player instructions tied to tactical roles and match engine phases.
-- Instruction impact on team strengths, match events, player ratings, fatigue, and tactical familiarity.
-- Role-development milestones for players learning a tactical role over time.
-- Staff advice inbox stories for role/instruction mismatch, tactical concerns, and development milestones.
-- Player profile and tactics-screen UI for instruction controls and milestone tracking.
+- Live-match tactical changes for mentality, pressing, tempo, width, line, and focus while the commentary is running.
+- Assistant recommendations during matches based on scoreline, fatigue, cards, role fit, and opponent phase strengths.
+- Substitution recommendations that explain the tradeoff: fitness, rating, role fit, tactical need, and promise/minutes pressure.
+- Post-match tactical review that links xG, shots, phase strengths, player instructions, role mastery, and fatigue outcomes.
+- Saved tactical presets so managers can switch between common plans without rebuilding every control.
+- Regression tests for in-match changes, recommendation triggers, post-match analysis, and preset migration.
 
 ### Later Phases
 
