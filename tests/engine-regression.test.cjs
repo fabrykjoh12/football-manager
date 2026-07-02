@@ -99,6 +99,7 @@ function run() {
   assert.ok(migratedLegacy.cups && migratedLegacy.cups.domestic.rounds.length > 0, "Migration should backfill domestic cup state");
   assert.ok(migratedLegacy.europe && migratedLegacy.europe.competition.rounds.length > 0, "Migration should backfill European competition state");
   assert.ok(migratedLegacy.academy.prospects.length > 0, "Migration should backfill academy state");
+  assert.ok(migratedLegacy.loanClubs && migratedLegacy.loanClubs.length >= 4, "Migration should backfill youth loan destinations");
   assert.equal(migratedLegacy.players[saka.id].potential, 90, "Migration should reapply matched player potentials");
 
   const academySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 3030 });
@@ -109,6 +110,33 @@ function run() {
   assert.equal(promotion.ok, true, "Academy prospects should be promotable");
   assert.ok(Engine.getClub(academySave, academySave.activeClubId).squad.includes(promotion.playerId), "Promoted academy players should join the senior squad");
   assert.equal(Engine.getPlayer(academySave, promotion.playerId).squadRole, "prospect", "Promoted academy players should join as prospects");
+  assert.ok(Engine.pathwayPromiseReport(academySave, promotion.playerId), "Promoted academy players should receive a pathway promise");
+
+  const pathwaySave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 3031 });
+  const pathwayProspect = Engine.academyReport(pathwaySave).prospects.find((row) => row.prospect.age >= 16).prospect;
+  const pathwayPromotion = Engine.promoteAcademyProspect(pathwaySave, pathwayProspect.id);
+  const pathwayPlayer = Engine.getPlayer(pathwaySave, pathwayPromotion.playerId);
+  const pathwayReport = Engine.youthPathwayReport(pathwaySave);
+  const pathwayCandidate = pathwayReport.candidates.find((row) => row.player.id === pathwayPlayer.id);
+  assert.ok(pathwayCandidate && pathwayCandidate.bestDestination, "Youth pathway report should recommend loan destinations");
+  assert.ok(pathwayCandidate.bestDestination.playingTime > 0 && pathwayCandidate.bestDestination.roleFit > 0, "Loan destination fit should score playing time and tactical role");
+  const outgoingLoan = Engine.loanOutYouthPlayer(pathwaySave, pathwayPlayer.id, pathwayCandidate.bestDestination.destinationId);
+  assert.equal(outgoingLoan.ok, true, "Youth prospects should be loanable to a recommended destination");
+  assert.equal(pathwayPlayer.parentClubId, pathwaySave.activeClubId, "Outgoing loan should keep the parent club");
+  assert.notEqual(pathwayPlayer.clubId, pathwaySave.activeClubId, "Outgoing loan should move the player out of the senior squad");
+  assert.ok(Engine.playerLoanReport(pathwaySave, pathwayPlayer.id), "Outgoing loans should be reportable from player profiles");
+  const activeLoan = pathwaySave.transfers.outgoingLoans[0];
+  activeLoan.fitScore = 90;
+  activeLoan.appearances = 24;
+  activeLoan.starts = 20;
+  activeLoan.minutes = 1720;
+  activeLoan.ratingApps = 24;
+  activeLoan.ratingTotal = 24 * 7.2;
+  activeLoan.averageRating = 7.2;
+  Engine.finishSeason(pathwaySave);
+  assert.equal(pathwayPlayer.clubId, pathwaySave.activeClubId, "Loaned prospects should return to the parent club at rollover");
+  assert.equal(activeLoan.status, "complete", "Outgoing loans should complete at season rollover");
+  assert.equal(pathwayPlayer.promises.pathway.status, "fulfilled", "Successful loan spells should fulfil pathway promises");
 
   const activeClub = Engine.getClub(save, save.activeClubId);
   assert.equal(activeClub.tactics.mentality, "balanced", "New saves should include default tactics");

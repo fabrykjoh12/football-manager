@@ -3,7 +3,7 @@
 
   const Data = global.FMLData || (typeof require !== "undefined" ? require("./data.js") : null);
   const MatchEngine = global.FMLMatchEngine || (typeof require !== "undefined" ? require("./match-engine.js") : null);
-  const VERSION = "1.10.0";
+  const VERSION = "1.11.0";
   const BENCH_SIZE = 7;
   const BASE_SEASON_YEAR = 2026;
   const TRAINING_FOCUS = {
@@ -431,6 +431,86 @@
       morale: 0.1
     }
   };
+  const YOUTH_LOAN_DESTINATIONS = [
+    {
+      id: "loan-sunderland",
+      name: "Sunderland",
+      city: "Sunderland",
+      shortName: "SUN",
+      level: "Championship",
+      reputation: 73,
+      playingTimeBias: 6,
+      focus: "physical",
+      secondaryFocus: ["defensive", "finishing"],
+      style: "High-energy, direct, competitive minutes",
+      roleBias: { GK: "goalkeeper", CB: "stopper", RB: "wingBack", LB: "wingBack", DM: "anchor", CM: "boxToBox", AM: "advancedPlaymaker", RW: "winger", LW: "winger", ST: "pressingForward" }
+    },
+    {
+      id: "loan-west-brom",
+      name: "West Bromwich Albion",
+      city: "West Bromwich",
+      shortName: "WBA",
+      level: "Championship",
+      reputation: 71,
+      playingTimeBias: 8,
+      focus: "defensive",
+      secondaryFocus: ["physical", "balanced"],
+      style: "Structured side with strong defensive coaching",
+      roleBias: { GK: "goalkeeper", CB: "centreBack", RB: "fullBack", LB: "fullBack", DM: "anchor", CM: "ballWinner", AM: "advancedPlaymaker", RW: "widePlaymaker", LW: "widePlaymaker", ST: "targetForward" }
+    },
+    {
+      id: "loan-swansea",
+      name: "Swansea City",
+      city: "Swansea",
+      shortName: "SWA",
+      level: "Championship",
+      reputation: 68,
+      playingTimeBias: 10,
+      focus: "technical",
+      secondaryFocus: ["playmaker", "balanced"],
+      style: "Possession football and technical development",
+      roleBias: { GK: "sweeperKeeper", CB: "ballPlayingDefender", RB: "fullBack", LB: "fullBack", DM: "deepPlaymaker", CM: "advancedPlaymaker", AM: "advancedPlaymaker", RW: "widePlaymaker", LW: "widePlaymaker", ST: "advancedForward" }
+    },
+    {
+      id: "loan-middlesbrough",
+      name: "Middlesbrough",
+      city: "Middlesbrough",
+      shortName: "MID",
+      level: "Championship",
+      reputation: 70,
+      playingTimeBias: 7,
+      focus: "playmaker",
+      secondaryFocus: ["technical", "defensive"],
+      style: "Balanced tactical platform for midfielders and creators",
+      roleBias: { GK: "goalkeeper", CB: "ballPlayingDefender", RB: "fullBack", LB: "fullBack", DM: "deepPlaymaker", CM: "boxToBox", AM: "advancedPlaymaker", RW: "insideForward", LW: "insideForward", ST: "advancedForward" }
+    },
+    {
+      id: "loan-ipswich",
+      name: "Ipswich Town",
+      city: "Ipswich",
+      shortName: "IPS",
+      level: "Championship",
+      reputation: 74,
+      playingTimeBias: 3,
+      focus: "balanced",
+      secondaryFocus: ["technical", "physical"],
+      style: "Aggressive top-end loan with Premier League-adjacent demands",
+      roleBias: { GK: "sweeperKeeper", CB: "ballPlayingDefender", RB: "wingBack", LB: "wingBack", DM: "deepPlaymaker", CM: "boxToBox", AM: "shadowStriker", RW: "insideForward", LW: "insideForward", ST: "pressingForward" }
+    },
+    {
+      id: "loan-charlton",
+      name: "Charlton Athletic",
+      city: "London",
+      shortName: "CHA",
+      level: "League One",
+      reputation: 61,
+      playingTimeBias: 17,
+      focus: "finishing",
+      secondaryFocus: ["physical", "technical"],
+      style: "High-minutes pathway for raw attackers and late developers",
+      roleBias: { GK: "goalkeeper", CB: "centreBack", RB: "fullBack", LB: "fullBack", DM: "ballWinner", CM: "boxToBox", AM: "shadowStriker", RW: "winger", LW: "winger", ST: "advancedForward" }
+    }
+  ];
   const SCOUTING_REGIONS = {
     england: {
       label: "England & Ireland",
@@ -799,6 +879,7 @@
         history: [],
         qualifiedClubIds: []
       },
+      loanClubs: [],
       transfers: {
         marketIds: [],
         offers: [],
@@ -806,7 +887,9 @@
         preAgreements: [],
         history: [],
         news: [],
-        freeAgentIds: []
+        freeAgentIds: [],
+        outgoingLoans: [],
+        nextLoanId: 1
       },
       inbox: [],
       lastMatch: null,
@@ -872,6 +955,31 @@
       delete state.academy._creatingIntake;
     }
     return state.academy;
+  }
+
+  function ensureLoanClubsState(state) {
+    state.loanClubs = Array.isArray(state.loanClubs) ? state.loanClubs : [];
+    const existingById = new Map(state.loanClubs.map((club) => [club.id, club]));
+    state.loanClubs = YOUTH_LOAN_DESTINATIONS.map((destination) => {
+      const existing = existingById.get(destination.id) || {};
+      return {
+        id: destination.id,
+        name: destination.name,
+        city: destination.city,
+        shortName: destination.shortName,
+        level: destination.level,
+        reputation: destination.reputation,
+        balance: existing.balance || 0,
+        transferBudget: existing.transferBudget || 0,
+        wageBudget: existing.wageBudget || 0,
+        squad: Array.isArray(existing.squad) ? existing.squad : [],
+        lineup: Array.isArray(existing.lineup) ? existing.lineup : [],
+        bench: Array.isArray(existing.bench) ? existing.bench : [],
+        virtual: true,
+        loanDestination: true
+      };
+    });
+    return state.loanClubs;
   }
 
   function leagueObjectiveForClub(club) {
@@ -2112,9 +2220,17 @@
     academy.prospects.splice(index, 1);
     if (club.id === state.activeClubId) {
       ensureBoardState(state).youthPromotions += 1;
+      createPathwayPromise(state, player, {
+        source: "academy-promotion",
+        trainingFocus: pathwayTrainingFocusForPlayer(player),
+        tacticalRoleKey: bestTacticalRoleForPlayer(player, player.position),
+        requiredMinutes: player.age <= 17 ? 300 : 420,
+        requiredStarts: player.age <= 17 ? 3 : 5,
+        dueDate: state.calendar ? addDays(state.calendar.currentDate, 168) : null
+      });
     }
     repairMatchdaySquad(state, club.id);
-    addInbox(state, "Academy Promotion", `${player.name} signed a senior contract and joined the first-team squad as a prospect.`);
+    addInbox(state, "Academy Promotion", `${player.name} signed a senior contract and joined the first-team squad as a prospect. Staff have set a first-team pathway promise.`);
     return { ok: true, message: `${player.name} promoted to the senior squad.`, playerId: player.id };
   }
 
@@ -2802,6 +2918,7 @@
 
     ensureScoutingState(state);
     ensureAcademyState(state);
+    ensureLoanClubsState(state);
     ensureBoardState(state);
     state.league.schedule = generateSchedule(state.league.clubs, state.season, state.calendar.seasonStartDate);
     ensureDomesticCupState(state);
@@ -2816,6 +2933,7 @@
   function getClub(state, clubId) {
     return (state.league.clubs || []).find((club) => club.id === clubId) ||
       (state.europe && state.europe.clubs ? state.europe.clubs.find((club) => club.id === clubId) : null) ||
+      (state.loanClubs || []).find((club) => club.id === clubId) ||
       null;
   }
 
@@ -3435,6 +3553,7 @@
       ...(player.happiness || {})
     };
     player.promises = player.promises || {};
+    player.loanDevelopment = player.loanDevelopment || null;
     return player;
   }
 
@@ -5081,13 +5200,15 @@
     updateMatchPrepFamiliarity(state);
     const scoutingEvent = processScoutingAssignmentsDaily(state);
     const academyEvent = processAcademyDaily(state);
+    const loanEvent = processOutgoingLoansDaily(state);
     const clubEvent = maybeGenerateDailyClubEvent(state);
     const offer = maybeGenerateDailyAiOffer(state);
     const aiMarketMove = maybeProcessDailyAiClubTransfer(state);
     const matchday = simulateFixturesForDate(state, processedDate);
     const happinessEvent = processSquadHappinessDaily(state);
+    const pathwayEvent = processPathwayPromisesDaily(state);
     const boardEvent = processBoardDaily(state);
-    if (clubEvent || happinessEvent || scoutingEvent || academyEvent || boardEvent || matchday.cupEvent || matchday.europeEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
+    if (clubEvent || happinessEvent || pathwayEvent || scoutingEvent || academyEvent || loanEvent || boardEvent || matchday.cupEvent || matchday.europeEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
 
     let seasonEnded = false;
     let seasonSummary = null;
@@ -5109,7 +5230,9 @@
       matchday: matchday.fixtures.length > 0,
       scoutingEvent,
       academyEvent,
+      loanEvent,
       boardEvent,
+      pathwayEvent,
       cupEvent: matchday.cupEvent,
       europeEvent: matchday.europeEvent,
       clubEvent,
@@ -5138,7 +5261,7 @@
   function describeDayEvent(state, before, result) {
     if (result.activeMatch) return { type: "match", title: "Matchday", body: "The next match is ready." };
     if (result.seasonEnded) return { type: "season", title: "Season Complete", body: result.seasonSummary ? `${result.seasonSummary.championName} won the league.` : "The season has finished." };
-    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.europeEvent ? { type: result.europeEvent.type, title: result.europeEvent.title } : null) || (result.cupEvent ? { type: result.cupEvent.type, title: result.cupEvent.title } : null) || (result.boardEvent ? { type: result.boardEvent.type, title: result.boardEvent.title } : null) || (result.scoutingEvent ? { type: result.scoutingEvent.type, title: result.scoutingEvent.title } : null) || (result.academyEvent ? { type: result.academyEvent.type, title: result.academyEvent.title } : null) || (result.happinessEvent ? { type: result.happinessEvent.type, title: result.happinessEvent.title } : null) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
+    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.europeEvent ? { type: result.europeEvent.type, title: result.europeEvent.title } : null) || (result.cupEvent ? { type: result.cupEvent.type, title: result.cupEvent.title } : null) || (result.boardEvent ? { type: result.boardEvent.type, title: result.boardEvent.title } : null) || (result.loanEvent ? { type: result.loanEvent.type, title: result.loanEvent.title } : null) || (result.pathwayEvent ? { type: result.pathwayEvent.type, title: result.pathwayEvent.title } : null) || (result.scoutingEvent ? { type: result.scoutingEvent.type, title: result.scoutingEvent.title } : null) || (result.academyEvent ? { type: result.academyEvent.type, title: result.academyEvent.title } : null) || (result.happinessEvent ? { type: result.happinessEvent.type, title: result.happinessEvent.title } : null) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
   }
 
   function simulateUntilNextEvent(state, options) {
@@ -5633,6 +5756,12 @@
     state.transfers.history = state.transfers.history || [];
     state.transfers.news = state.transfers.news || [];
     state.transfers.freeAgentIds = state.transfers.freeAgentIds || [];
+    state.transfers.outgoingLoans = Array.isArray(state.transfers.outgoingLoans) ? state.transfers.outgoingLoans : [];
+    const maxLoan = state.transfers.outgoingLoans.reduce((max, loan) => {
+      const number = Number(String(loan.id || "").replace(/[^0-9]/g, ""));
+      return Number.isFinite(number) ? Math.max(max, number) : max;
+    }, 0);
+    state.transfers.nextLoanId = Math.max(state.transfers.nextLoanId || 1, maxLoan + 1);
     return state.transfers;
   }
 
@@ -5897,6 +6026,474 @@
       preAgreements,
       activity: active ? "High" : window.isOpen ? "Normal" : "Planning"
     };
+  }
+
+  function loanDestinationDefinition(destinationId) {
+    return YOUTH_LOAN_DESTINATIONS.find((destination) => destination.id === destinationId) || null;
+  }
+
+  function loanFocusLabel(focus) {
+    return ACADEMY_PLANS[focus] ? ACADEMY_PLANS[focus].label : ACADEMY_PLANS.balanced.label;
+  }
+
+  function pathwayFocusForPlayer(player) {
+    if (!player) return "balanced";
+    if (player.trainingFocus === "finishing") return "finishing";
+    if (player.trainingFocus === "playmaking") return "playmaker";
+    if (player.trainingFocus === "defending") return "defensive";
+    if (player.trainingFocus === "physical") return "physical";
+    if (["RW", "LW", "AM"].includes(player.position)) return "technical";
+    if (player.position === "ST") return "finishing";
+    if (["CB", "RB", "LB", "DM"].includes(player.position)) return "defensive";
+    if (["CM"].includes(player.position)) return "playmaker";
+    return "balanced";
+  }
+
+  function pathwayTrainingFocusForPlayer(player) {
+    const focus = pathwayFocusForPlayer(player);
+    if (focus === "playmaker" || focus === "technical") return "playmaking";
+    if (focus === "defensive") return "defending";
+    if (focus === "physical") return "physical";
+    if (focus === "finishing") return "finishing";
+    return "balanced";
+  }
+
+  function preferredLoanRoleForDestination(player, destination) {
+    const roleBias = destination && destination.roleBias ? destination.roleBias[player.position] || destination.roleBias[positionBand(player.position)] : null;
+    const options = roleOptionsForPosition(player.position).map((role) => role.key);
+    if (roleBias && options.includes(roleBias)) return roleBias;
+    return bestTacticalRoleForPlayer(player, player.position);
+  }
+
+  function loanDestinationFit(state, player, destination) {
+    const focus = pathwayFocusForPlayer(player);
+    const roleKey = preferredLoanRoleForDestination(player, destination);
+    const roleFit = playerRoleFit(player, roleKey, player.position);
+    const targetAbility = destination.reputation - (destination.level === "League One" ? 10 : 5);
+    const overLevel = Math.max(0, player.currentAbility - targetAbility);
+    const underLevel = Math.max(0, targetAbility - player.currentAbility);
+    const playingTime = round(clamp(58 + overLevel * 3.4 - underLevel * 5.2 + destination.playingTimeBias, 12, 98), 0);
+    const levelFit = round(clamp(96 - Math.abs(player.currentAbility - targetAbility) * 3.8 - Math.max(0, player.currentAbility - destination.reputation - 14) * 2.2, 12, 98), 0);
+    const focusScore = destination.focus === focus
+      ? 92
+      : (destination.secondaryFocus || []).includes(focus)
+        ? 78
+        : focus === "balanced" || destination.focus === "balanced"
+          ? 68
+          : 52;
+    const reputationFit = round(clamp(42 + destination.reputation * 0.64 + (destination.level === "Championship" ? 7 : -2), 30, 94), 0);
+    const score = round(clamp(playingTime * 0.34 + levelFit * 0.24 + roleFit * 0.2 + focusScore * 0.14 + reputationFit * 0.08, 1, 100), 0);
+    const tone = score >= 82 ? "green" : score >= 68 ? "blue" : score >= 52 ? "amber" : "red";
+    const notes = [
+      `${playingTime}/100 playing time`,
+      `${levelFit}/100 level fit`,
+      `${roleFit}/100 ${tacticalRoleLabel(roleKey)} fit`,
+      `${loanFocusLabel(destination.focus)} focus`
+    ];
+    return {
+      destinationId: destination.id,
+      name: destination.name,
+      clubId: destination.id,
+      level: destination.level,
+      reputation: destination.reputation,
+      style: destination.style,
+      focus,
+      destinationFocus: destination.focus,
+      focusLabel: loanFocusLabel(destination.focus),
+      roleKey,
+      roleLabel: tacticalRoleLabel(roleKey),
+      playingTime,
+      levelFit,
+      roleFit,
+      focusScore,
+      reputationFit,
+      score,
+      tone,
+      notes
+    };
+  }
+
+  function loanDestinationOptions(state, playerId) {
+    ensureLoanClubsState(state);
+    const player = getPlayer(state, playerId);
+    if (!player) return [];
+    return YOUTH_LOAN_DESTINATIONS
+      .map((destination) => loanDestinationFit(state, player, destination))
+      .sort((a, b) => b.score - a.score || b.playingTime - a.playingTime || b.reputation - a.reputation);
+  }
+
+  function isYouthLoanCandidate(state, player) {
+    const club = getClub(state, state.activeClubId);
+    if (!club || !player || player.clubId !== club.id || player.loanUntilSeason) return false;
+    normalizePlayerState(player);
+    if (player.age > 23) return false;
+    if (isUnavailable(state, player)) return false;
+    const firstTeamLocked = ["star", "important"].includes(player.squadRole) && player.currentAbility >= (club.reputation || 72) - 3;
+    if (firstTeamLocked) return false;
+    return player.squadRole === "prospect" || player.squadRole === "backup" || player.age <= 21 || player.potential - player.currentAbility >= 7;
+  }
+
+  function activeOutgoingLoanForPlayer(state, playerId) {
+    const transfers = ensureTransferState(state);
+    return transfers.outgoingLoans.find((loan) => loan.playerId === playerId && loan.status === "active") || null;
+  }
+
+  function createPathwayPromise(state, player, options) {
+    if (!player) return null;
+    normalizePlayerState(player);
+    const source = options && options.source ? options.source : "pathway";
+    const loanRequired = !!(options && options.loanRequired);
+    const focus = options && options.trainingFocus ? options.trainingFocus : pathwayTrainingFocusForPlayer(player);
+    const roleKey = options && options.tacticalRoleKey ? options.tacticalRoleKey : bestTacticalRoleForPlayer(player, player.position);
+    const currentDate = state.calendar ? state.calendar.currentDate : createSeasonCalendar(state.season || 1).currentDate;
+    const dueDate = options && options.dueDate ? options.dueDate : addDays(currentDate, loanRequired ? 250 : 154);
+    player.promises.pathway = {
+      status: "active",
+      source,
+      createdDate: currentDate,
+      dueDate,
+      requiredMinutes: options && Number.isFinite(options.requiredMinutes) ? options.requiredMinutes : loanRequired ? 900 : player.squadRole === "prospect" ? 360 : 540,
+      requiredStarts: options && Number.isFinite(options.requiredStarts) ? options.requiredStarts : loanRequired ? 10 : 4,
+      squadRole: options && options.squadRole ? options.squadRole : player.squadRole,
+      trainingFocus: focus,
+      tacticalRoleKey: roleKey,
+      loanRequired,
+      loanId: options && options.loanId ? options.loanId : null,
+      loanClubId: options && options.loanClubId ? options.loanClubId : null,
+      lastAlertDay: -999,
+      outcome: null
+    };
+    return player.promises.pathway;
+  }
+
+  function pathwayPromiseReport(state, playerId) {
+    const player = getPlayer(state, playerId);
+    if (!player || !player.promises || !player.promises.pathway) return null;
+    const promise = player.promises.pathway;
+    const loan = promise.loanId
+      ? ensureTransferState(state).outgoingLoans.find((item) => item.id === promise.loanId)
+      : activeOutgoingLoanForPlayer(state, player.id);
+    const loanMinutes = loan ? Number(loan.minutes || 0) : 0;
+    const loanStarts = loan ? Number(loan.starts || 0) : 0;
+    const seniorMinutes = Number(player.seasonStats && player.seasonStats.minutes || 0);
+    const seniorStarts = Number(player.seasonStats && player.seasonStats.starts || 0);
+    const minutes = Math.max(seniorMinutes, loanMinutes);
+    const starts = Math.max(seniorStarts, loanStarts);
+    const minutesProgress = round(clamp(minutes / Math.max(1, promise.requiredMinutes || 1) * 100, 0, 120), 0);
+    const startsProgress = round(clamp(starts / Math.max(1, promise.requiredStarts || 1) * 100, 0, 120), 0);
+    const roleProgress = roleExpectation(player.squadRole).order >= roleExpectation(promise.squadRole || "prospect").order ? 100 : 54;
+    const trainingProgress = player.trainingFocus === promise.trainingFocus || player.individualPlan === "extra" ? 100 : 56;
+    const tacticalProgress = promise.tacticalRoleKey ? playerRoleFit(player, promise.tacticalRoleKey, player.position) : 68;
+    const loanProgress = promise.loanRequired
+      ? loan ? round(clamp((loan.fitScore || 60) * 0.42 + minutesProgress * 0.34 + (loan.averageRating || 6.6) * 7.2, 0, 100), 0) : 0
+      : loan ? round(clamp(76 + (loan.fitScore || 60) * 0.18, 0, 100), 0) : 64;
+    const weighted = promise.loanRequired
+      ? loanProgress * 0.48 + minutesProgress * 0.22 + tacticalProgress * 0.14 + trainingProgress * 0.1 + roleProgress * 0.06
+      : Math.max(minutesProgress, startsProgress) * 0.44 + roleProgress * 0.18 + trainingProgress * 0.18 + tacticalProgress * 0.14 + loanProgress * 0.06;
+    const progress = round(clamp(weighted, 0, 100), 0);
+    const today = state.calendar ? state.calendar.currentDate : createSeasonCalendar(state.season || 1).currentDate;
+    const daysRemaining = promise.dueDate ? daysBetween(today, promise.dueDate) : 0;
+    const effectiveStatus = promise.status || "active";
+    const label = effectiveStatus === "fulfilled"
+      ? "Promise Kept"
+      : effectiveStatus === "broken"
+        ? "Promise Broken"
+        : progress >= 78
+          ? "On Track"
+          : daysRemaining <= 21 && progress < 58
+            ? "At Risk"
+            : "Developing";
+    const tone = effectiveStatus === "fulfilled" ? "green" : effectiveStatus === "broken" ? "red" : label === "On Track" ? "green" : label === "At Risk" ? "amber" : "blue";
+    return {
+      playerId: player.id,
+      promise,
+      loan,
+      status: effectiveStatus,
+      label,
+      tone,
+      progress,
+      daysRemaining,
+      minutes,
+      starts,
+      minutesProgress,
+      startsProgress,
+      roleProgress,
+      trainingProgress,
+      tacticalProgress,
+      loanProgress,
+      roleLabel: tacticalRoleLabel(promise.tacticalRoleKey),
+      focusLabel: trainingFocusLabel(promise.trainingFocus),
+      dueDate: promise.dueDate,
+      detail: promise.loanRequired
+        ? loan ? `${loan.appearances || 0} loan apps at ${loan.destinationName}` : "Loan pathway still needed"
+        : `${minutes}/${promise.requiredMinutes} minutes`
+    };
+  }
+
+  function playerLoanReport(state, playerId) {
+    const transfers = ensureTransferState(state);
+    const loan = transfers.outgoingLoans.find((item) => item.playerId === playerId && item.status === "active") ||
+      transfers.outgoingLoans.find((item) => item.playerId === playerId && item.status === "complete");
+    if (!loan) return null;
+    return {
+      loan,
+      club: getClub(state, loan.toClubId),
+      promise: pathwayPromiseReport(state, playerId),
+      averageRating: loan.ratingApps ? round(loan.ratingTotal / loan.ratingApps, 2) : 0,
+      progress: round(clamp((loan.fitScore || 60) * 0.42 + (loan.minutes || 0) / 12 + (loan.averageRating || 6.6) * 6, 0, 100), 0)
+    };
+  }
+
+  function youthPathwayReport(state) {
+    const club = getClub(state, state.activeClubId);
+    const transfers = ensureTransferState(state);
+    ensureLoanClubsState(state);
+    const candidates = club ? clubPlayers(state, club.id)
+      .filter((player) => isYouthLoanCandidate(state, player))
+      .map((player) => {
+        const destinations = loanDestinationOptions(state, player.id).slice(0, 3);
+        return {
+          player,
+          destinations,
+          bestDestination: destinations[0] || null,
+          promise: pathwayPromiseReport(state, player.id)
+        };
+      })
+      .sort((a, b) => (b.bestDestination ? b.bestDestination.score : 0) - (a.bestDestination ? a.bestDestination.score : 0) || b.player.potential - a.player.potential)
+      .slice(0, 12) : [];
+    const activeLoans = transfers.outgoingLoans
+      .filter((loan) => loan.status === "active")
+      .map((loan) => ({
+        loan,
+        player: getPlayer(state, loan.playerId),
+        club: getClub(state, loan.toClubId),
+        promise: pathwayPromiseReport(state, loan.playerId)
+      }))
+      .filter((row) => row.player)
+      .sort((a, b) => (b.promise ? b.promise.progress : 0) - (a.promise ? a.promise.progress : 0));
+    const promises = Object.values(state.players || {})
+      .map((player) => pathwayPromiseReport(state, player.id))
+      .filter(Boolean)
+      .filter((report) => {
+        const player = getPlayer(state, report.playerId);
+        return player && (player.clubId === state.activeClubId || player.parentClubId === state.activeClubId);
+      })
+      .sort((a, b) => a.progress - b.progress);
+    return {
+      destinations: ensureLoanClubsState(state),
+      candidates,
+      activeLoans,
+      promises,
+      kept: promises.filter((promise) => promise.status === "fulfilled").length,
+      atRisk: promises.filter((promise) => promise.label === "At Risk" || promise.status === "broken").length
+    };
+  }
+
+  function loanOutYouthPlayer(state, playerId, destinationId) {
+    const player = getPlayer(state, playerId);
+    const activeClub = getClub(state, state.activeClubId);
+    const window = transferWindowStatus(state);
+    if (!player || !activeClub || player.clubId !== activeClub.id) return { ok: false, message: "Player is not available for an outgoing loan." };
+    if (!isYouthLoanCandidate(state, player)) return { ok: false, message: "This player is too established or unavailable for a youth pathway loan." };
+    if (!window.isOpen) return { ok: false, message: `Youth loans can start when the ${window.nextWindow.name} opens on ${formatGameDate(window.opensOn)}.` };
+    const options = loanDestinationOptions(state, player.id);
+    const destination = options.find((item) => item.destinationId === destinationId) || options[0];
+    const destinationClub = destination ? getClub(state, destination.destinationId) : null;
+    if (!destination || !destinationClub) return { ok: false, message: "Loan destination unavailable." };
+
+    const transfers = ensureTransferState(state);
+    const loanId = `yl-${state.season}-${transfers.nextLoanId++}`;
+    const loan = {
+      id: loanId,
+      playerId: player.id,
+      fromClubId: activeClub.id,
+      toClubId: destinationClub.id,
+      destinationName: destinationClub.name,
+      destinationLevel: destination.level,
+      focus: destination.destinationFocus,
+      focusLabel: destination.focusLabel,
+      roleKey: destination.roleKey,
+      roleLabel: destination.roleLabel,
+      fitScore: destination.score,
+      playingTimeScore: destination.playingTime,
+      levelFit: destination.levelFit,
+      roleFit: destination.roleFit,
+      reputationFit: destination.reputationFit,
+      status: "active",
+      startedDate: state.calendar ? state.calendar.currentDate : null,
+      dueSeason: state.season + 1,
+      lastReportDay: state.calendar ? state.calendar.day || 1 : 1,
+      daysOnLoan: 0,
+      appearances: 0,
+      starts: 0,
+      minutes: 0,
+      goals: 0,
+      assists: 0,
+      ratingTotal: 0,
+      ratingApps: 0,
+      averageRating: 0,
+      progressNotes: []
+    };
+    transfers.outgoingLoans.unshift(loan);
+    transfers.outgoingLoans = transfers.outgoingLoans.slice(0, 80);
+
+    movePlayerBetweenClubs(state, player.id, activeClub.id, destinationClub.id);
+    player.parentClubId = activeClub.id;
+    player.loanUntilSeason = state.season + 1;
+    player.loanDevelopment = {
+      loanId,
+      destinationName: destinationClub.name,
+      focus: destination.destinationFocus,
+      roleKey: destination.roleKey,
+      fitScore: destination.score,
+      startedDate: loan.startedDate
+    };
+    createPathwayPromise(state, player, {
+      source: "loan-pathway",
+      loanRequired: true,
+      loanId,
+      loanClubId: destinationClub.id,
+      trainingFocus: pathwayTrainingFocusForPlayer(player),
+      tacticalRoleKey: destination.roleKey,
+      requiredMinutes: destination.playingTime >= 78 ? 1200 : 900,
+      requiredStarts: destination.playingTime >= 78 ? 14 : 10,
+      dueDate: state.calendar ? state.calendar.seasonEndDate : addDays(loan.startedDate, 250)
+    });
+    recordTransfer(state, {
+      type: "loan",
+      playerId: player.id,
+      playerName: player.name,
+      fromClubId: activeClub.id,
+      toClubId: destinationClub.id,
+      fee: 0,
+      wage: player.wage
+    });
+    addInbox(state, "Youth Loan Agreed", `${player.name} joined ${destinationClub.name} on loan. Fit: ${destination.score}/100, role: ${destination.roleLabel}, focus: ${destination.focusLabel}.`);
+    refreshTransferMarket(state);
+    return { ok: true, message: `${player.name} loaned to ${destinationClub.name}.`, loanId, destination };
+  }
+
+  function recordLoanAppearance(state, player, loan, started, minutes, rating) {
+    loan.appearances += 1;
+    loan.starts += started ? 1 : 0;
+    loan.minutes += minutes;
+    loan.ratingTotal += rating;
+    loan.ratingApps += 1;
+    loan.averageRating = round(loan.ratingTotal / Math.max(1, loan.ratingApps), 2);
+    const goalChance = player.position === "ST" ? 0.24 : ["RW", "LW", "AM"].includes(player.position) ? 0.15 : ["CM"].includes(player.position) ? 0.06 : 0.02;
+    const assistChance = ["AM", "RW", "LW", "CM"].includes(player.position) ? 0.18 : ["RB", "LB", "DM"].includes(player.position) ? 0.09 : 0.05;
+    const goals = random(state) < goalChance + Math.max(0, rating - 7) * 0.08 ? 1 : 0;
+    const assists = random(state) < assistChance + Math.max(0, rating - 7) * 0.06 ? 1 : 0;
+    loan.goals += goals;
+    loan.assists += assists;
+    addPlayerStat(player.seasonStats, "apps", 1);
+    addPlayerStat(player.careerTotals, "apps", 1);
+    if (started) {
+      addPlayerStat(player.seasonStats, "starts", 1);
+      addPlayerStat(player.careerTotals, "starts", 1);
+    }
+    addPlayerStat(player.seasonStats, "minutes", minutes);
+    addPlayerStat(player.careerTotals, "minutes", minutes);
+    addPlayerStat(player.seasonStats, "goals", goals);
+    addPlayerStat(player.careerTotals, "goals", goals);
+    addPlayerStat(player.seasonStats, "assists", assists);
+    addPlayerStat(player.careerTotals, "assists", assists);
+    addPlayerStat(player.seasonStats, "ratingTotal", rating);
+    addPlayerStat(player.careerTotals, "ratingTotal", rating);
+    addPlayerStat(player.seasonStats, "ratingApps", 1);
+    addPlayerStat(player.careerTotals, "ratingApps", 1);
+    player.form.unshift(rating);
+    player.form = player.form.slice(0, 5);
+    player.sharpness = Math.round(clamp(player.sharpness + (started ? 2 : 1), 0, 100));
+    player.fitness = Math.round(clamp(player.fitness - randomFloat(state, 1.4, 4.2), 35, 100));
+    player.morale = Math.round(clamp(player.morale + (rating >= 7 ? 2 : rating < 6.3 ? -1 : 1), 0, 100));
+  }
+
+  function processOutgoingLoansDaily(state) {
+    const transfers = ensureTransferState(state);
+    if (!transfers.outgoingLoans.length || !state.calendar) return null;
+    const day = state.calendar.day || 1;
+    let event = null;
+    transfers.outgoingLoans.forEach((loan) => {
+      if (loan.status !== "active") return;
+      const player = getPlayer(state, loan.playerId);
+      if (!player || player.parentClubId !== state.activeClubId) {
+        loan.status = "complete";
+        return;
+      }
+      loan.daysOnLoan = Math.max(0, daysBetween(loan.startedDate || state.calendar.currentDate, state.calendar.currentDate));
+      if (day % 7 === 0) {
+        const appearanceChance = clamp((loan.playingTimeScore || 60) / 100 * 0.88 + Math.max(0, player.currentAbility - 58) / 220, 0.18, 0.94);
+        if (random(state) < appearanceChance) {
+          const started = random(state) < clamp((loan.playingTimeScore || 60) / 112, 0.32, 0.88);
+          const minutes = started ? randomInt(state, 62, 96) : randomInt(state, 16, 36);
+          const rating = round(clamp(6.15 + (loan.fitScore - 60) / 70 + (player.currentAbility - 58) / 130 + randomFloat(state, -0.55, 0.85), 5.6, 8.6), 2);
+          recordLoanAppearance(state, player, loan, started, minutes, rating);
+          if (random(state) < 0.16 + (loan.fitScore || 60) / 900) {
+            const plan = ACADEMY_PLANS[loan.focus] || ACADEMY_PLANS.balanced;
+            const attribute = pick(state, plan.attributes);
+            const before = player.attributes[attribute] || player.currentAbility;
+            player.attributes[attribute] = Math.round(clamp(before + 1, 18, 99));
+            player.currentAbility = calculateAbilityFromAttributes(player);
+            player.potential = Math.max(player.potential, player.currentAbility);
+            player.value = calculatePlayerValue(player);
+            const developmentEvent = {
+              date: state.calendar.currentDate,
+              attribute,
+              before,
+              after: player.attributes[attribute],
+              focus: player.trainingFocus,
+              source: "loan"
+            };
+            player.developmentEvents.unshift(developmentEvent);
+            player.developmentEvents = player.developmentEvents.slice(0, 18);
+          }
+        }
+      }
+      if (day - (loan.lastReportDay || -999) >= 28) {
+        loan.lastReportDay = day;
+        const report = pathwayPromiseReport(state, player.id);
+        const note = `${player.name} has ${loan.appearances} apps, ${loan.minutes} minutes and a ${loan.averageRating || "-"} average rating at ${loan.destinationName}.`;
+        loan.progressNotes.unshift({ date: state.calendar.currentDate, note, progress: report ? report.progress : 0 });
+        loan.progressNotes = loan.progressNotes.slice(0, 8);
+        addInbox(state, "Loan Progress", `${note} Pathway status: ${report ? report.label : "Developing"}.`);
+        if (!event) event = { type: "loan", title: "Loan Progress", playerId: player.id, loanId: loan.id };
+      }
+    });
+    return event;
+  }
+
+  function processPathwayPromisesDaily(state) {
+    if (!state.calendar) return null;
+    const day = state.calendar.day || 1;
+    let event = null;
+    Object.values(state.players || {}).forEach((player) => {
+      normalizePlayerState(player);
+      const promise = player.promises && player.promises.pathway;
+      if (!promise || promise.status !== "active") return;
+      if (player.clubId !== state.activeClubId && player.parentClubId !== state.activeClubId) return;
+      const report = pathwayPromiseReport(state, player.id);
+      if (!report) return;
+      if (report.progress >= 86) {
+        promise.status = "fulfilled";
+        promise.outcome = "kept";
+        player.morale = Math.round(clamp(player.morale + randomInt(state, 4, 9), 0, 100));
+        addInbox(state, "Pathway Promise Kept", `${player.name}'s development pathway is on track. ${report.detail}.`);
+        if (!event) event = { type: "pathway", title: "Pathway Promise Kept", playerId: player.id };
+      } else if (promise.dueDate && compareDates(state.calendar.currentDate, promise.dueDate) > 0) {
+        promise.status = "broken";
+        promise.outcome = "broken";
+        player.morale = Math.round(clamp(player.morale - randomInt(state, 8, 16), 0, 100));
+        addInbox(state, "Pathway Promise Broken", `${player.name}'s pathway promise was missed. ${report.detail}.`);
+        if (!event) event = { type: "pathway", title: "Pathway Promise Broken", playerId: player.id };
+      } else if (report.label === "At Risk" && day - (promise.lastAlertDay || -999) >= 21) {
+        promise.lastAlertDay = day;
+        player.morale = Math.round(clamp(player.morale - randomInt(state, 1, 4), 0, 100));
+        addInbox(state, "Pathway Promise Risk", `${player.name}'s pathway needs attention before ${formatGameDate(promise.dueDate)}. ${report.detail}.`);
+        if (!event) event = { type: "pathway", title: "Pathway Promise Risk", playerId: player.id };
+      }
+    });
+    return event;
   }
 
   function addTransferNews(state, news) {
@@ -6499,9 +7096,62 @@
     });
   }
 
+  function completeOutgoingLoanDevelopment(state, loan, player) {
+    if (!loan || !player || loan.status === "complete") return null;
+    const plan = ACADEMY_PLANS[loan.focus] || ACADEMY_PLANS.balanced;
+    const average = loan.ratingApps ? loan.ratingTotal / loan.ratingApps : 6.4;
+    const minutesScore = clamp((loan.minutes || 0) / 1500 * 100, 0, 100);
+    const appearanceScore = clamp((loan.appearances || 0) / 24 * 100, 0, 100);
+    const ratingScore = clamp((average - 5.8) * 42, 0, 100);
+    const outcomeScore = round(clamp((loan.fitScore || 60) * 0.26 + minutesScore * 0.28 + appearanceScore * 0.18 + ratingScore * 0.28, 0, 100), 0);
+    const growth = outcomeScore >= 82 ? 3 : outcomeScore >= 68 ? 2 : outcomeScore >= 52 ? 1 : 0;
+    const beforeAbility = player.currentAbility;
+    for (let i = 0; i < growth; i += 1) {
+      const attribute = pick(state, plan.attributes);
+      player.attributes[attribute] = Math.round(clamp((player.attributes[attribute] || player.currentAbility) + 1, 18, 99));
+    }
+    player.currentAbility = calculateAbilityFromAttributes(player);
+    if (outcomeScore >= 78 && player.age <= 22) {
+      player.potential = Math.round(clamp(player.potential + randomFloat(state, 0, 1.8), player.currentAbility, 99));
+    }
+    player.value = calculatePlayerValue(player);
+    player.morale = Math.round(clamp(player.morale + (outcomeScore >= 68 ? randomInt(state, 4, 10) : outcomeScore < 46 ? -randomInt(state, 4, 10) : randomInt(state, -1, 4)), 0, 100));
+    loan.status = "complete";
+    loan.returnedDate = state.calendar ? state.calendar.currentDate : null;
+    loan.outcomeScore = outcomeScore;
+    loan.outcome = outcomeScore >= 78 ? "Excellent" : outcomeScore >= 62 ? "Successful" : outcomeScore >= 48 ? "Mixed" : "Disappointing";
+    loan.growth = Math.max(0, player.currentAbility - beforeAbility);
+    loan.finalAbility = player.currentAbility;
+    player.loanDevelopment = {
+      ...(player.loanDevelopment || {}),
+      status: "complete",
+      outcome: loan.outcome,
+      outcomeScore,
+      growth: loan.growth,
+      returnedDate: loan.returnedDate
+    };
+    const promise = player.promises && player.promises.pathway && player.promises.pathway.loanId === loan.id ? player.promises.pathway : null;
+    if (promise && promise.status === "active") {
+      if (outcomeScore >= 58 || (loan.minutes || 0) >= (promise.requiredMinutes || 900) * 0.72) {
+        promise.status = "fulfilled";
+        promise.outcome = "kept";
+      } else {
+        promise.status = "broken";
+        promise.outcome = "broken";
+      }
+    }
+    if (player.parentClubId === state.activeClubId) {
+      addInbox(state, "Loan Return", `${player.name} returned from ${loan.destinationName}: ${loan.outcome}, ${loan.appearances} apps, ${loan.minutes} minutes, ${loan.averageRating || "-"} avg rating.`);
+    }
+    return loan;
+  }
+
   function processLoansAndContracts(state) {
+    const transfers = ensureTransferState(state);
     Object.values(state.players).forEach((player) => {
       if (player.loanUntilSeason && player.loanUntilSeason <= state.season + 1 && player.parentClubId) {
+        const loan = transfers.outgoingLoans.find((item) => item.status === "active" && item.playerId === player.id && item.fromClubId === player.parentClubId);
+        if (loan) completeOutgoingLoanDevelopment(state, loan, player);
         movePlayerBetweenClubs(state, player.id, player.clubId, player.parentClubId);
         player.loanUntilSeason = null;
         player.parentClubId = null;
@@ -7085,6 +7735,16 @@
     player.value = calculatePlayerValue(player);
     player.loanUntilSeason = null;
     player.parentClubId = null;
+    if (toClub && toClub.id === state.activeClubId && player.age <= 21 && player.squadRole === "prospect") {
+      createPathwayPromise(state, player, {
+        source: "young-signing",
+        trainingFocus: pathwayTrainingFocusForPlayer(player),
+        tacticalRoleKey: bestTacticalRoleForPlayer(player, player.position),
+        requiredMinutes: player.currentAbility >= toClub.reputation - 7 ? 540 : 360,
+        requiredStarts: player.currentAbility >= toClub.reputation - 7 ? 6 : 4,
+        dueDate: state.calendar ? addDays(state.calendar.currentDate, 168) : null
+      });
+    }
     if (!state.league.records.recordFee || fee > state.league.records.recordFee.fee) {
       state.league.records.recordFee = {
         season: state.season,
@@ -7143,6 +7803,16 @@
     player.squadRole = inferSquadRole(player, club);
     player.promises = {};
     player.morale = Math.round(clamp(Math.max(player.morale, 56) + randomInt(state, 0, 5), 0, 100));
+    if (club.id === state.activeClubId && player.age <= 21 && player.squadRole === "prospect") {
+      createPathwayPromise(state, player, {
+        source: "young-signing",
+        trainingFocus: pathwayTrainingFocusForPlayer(player),
+        tacticalRoleKey: bestTacticalRoleForPlayer(player, player.position),
+        requiredMinutes: player.currentAbility >= club.reputation - 7 ? 540 : 360,
+        requiredStarts: player.currentAbility >= club.reputation - 7 ? 6 : 4,
+        dueDate: state.calendar ? addDays(state.calendar.currentDate, 168) : null
+      });
+    }
     state.transfers.freeAgentIds = (state.transfers.freeAgentIds || []).filter((id) => id !== player.id);
     repairMatchdaySquad(state, club.id);
     recordTransfer(state, {
@@ -7317,6 +7987,7 @@
     state.league.records = state.league.records || {};
     ensureTransferState(state);
     ensureScoutingState(state);
+    ensureLoanClubsState(state);
     ensureScheduleDates(state);
     if (!hadCalendar && savedRound > 0 && state.league.schedule && state.league.schedule.length) {
       const previousRound = state.league.schedule[Math.min(savedRound - 1, state.league.schedule.length - 1)];
@@ -7413,6 +8084,7 @@
     ACADEMY_PLANS,
     SCOUTING_REGIONS,
     SCOUTING_FOCUS,
+    YOUTH_LOAN_DESTINATIONS,
     STAFF_DEPARTMENTS,
     TACTICAL_ROLES,
     DOMESTIC_CUP_ROUNDS,
@@ -7453,6 +8125,10 @@
     autoSetTacticalRoles,
     playerHappinessReport,
     squadHappinessReport,
+    youthPathwayReport,
+    loanDestinationOptions,
+    pathwayPromiseReport,
+    playerLoanReport,
     contractRenewalProfile,
     transferWindowStatus,
     processTransferPreAgreements,
@@ -7503,6 +8179,7 @@
     setSquadRole,
     makeTransferOffer,
     loanPlayer,
+    loanOutYouthPlayer,
     renewContract,
     signFreeAgent,
     acceptCounterOffer,

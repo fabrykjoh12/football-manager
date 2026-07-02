@@ -256,6 +256,20 @@ Design target:
 - Tables and horizontal nav now use containment/min-width constraints so desktop and mobile avoid page-level overflow while retaining internal scrolling.
 - Browser QA covered dashboard, squad, match day, console errors, desktop overflow, and mobile overflow.
 
+### Youth Loans + Pathway Promises
+
+- New saves and migrated saves now include virtual English loan destination clubs outside the Premier League table.
+- Academy promotions now create first-team pathway promises for minutes, role fit, training focus, and tactical-role development.
+- Young incoming signings can receive pathway promises when they join as prospects.
+- Academy screen now has a Loan Pathway panel with active loan spells, promise status, and recommended outgoing loan candidates.
+- User-controlled outgoing youth loans move prospects to fitted destinations during open windows.
+- Loan destination fit scores playing time, competition level, tactical role, development focus, and club reputation.
+- Daily simulation now progresses outgoing loan spells with apps, minutes, ratings, goals, assists, development events, and inbox loan-progress reports.
+- Pathway promises can generate risk, kept, and broken inbox stories during day-by-day progression.
+- Season rollover now returns loaned prospects, resolves the loan outcome, applies development effects, and fulfils or breaks the pathway promise.
+- Player profiles now show pathway promise progress and active/completed loan-development cards.
+- Regression tests cover loan destination migration, academy-promotion promises, outgoing youth loans, profile reports, and rollover promise resolution.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
@@ -272,26 +286,24 @@ Design target:
 - `b09c4c0` Add board objectives and domestic cup
 - `06ceb1c` Add European qualification and Continental Cup
 - `ea324bc` Upgrade premium UI design system
+- Current session: Add youth loans and pathway promises
 
-The latest completed feature phase is Premium UI/UX Design System Pass.
+The latest completed feature phase is Youth Loans + Pathway Promises.
 
 ## Current Roadmap
 
-### Next Phase: Youth Loans + Pathway Promises
+### Next Phase: Individual Player Instructions + Role Milestones
 
 Planned work:
 
-- User-controlled youth loans for academy graduates and fringe prospects.
-- Loan destination fit based on playing time, level, tactical role, development focus, and club reputation.
-- Pathway promises when promoting academy prospects or negotiating with young players.
-- Promise tracking for minutes, squad role, loan pathway, training plan, and tactical-role development.
-- Inbox stories for loan progress, promise risk, promise kept, and promise broken.
-- Season rollover development effects from successful or poor loan spells.
+- Individual player instructions tied to tactical roles and match engine phases.
+- Instruction impact on team strengths, match events, player ratings, fatigue, and tactical familiarity.
+- Role-development milestones for players learning a tactical role over time.
+- Staff advice inbox stories for role/instruction mismatch, tactical concerns, and development milestones.
+- Player profile and tactics-screen UI for instruction controls and milestone tracking.
 
 ### Later Phases
 
-- Individual player instructions tied to tactical roles and match engine phases.
-- Inbox stories for staff advice, tactical concerns, and role-development milestones.
 - Save versioning and migration tests for more old-save shapes.
 - Better mobile layout QA.
 

@@ -962,6 +962,7 @@
 
   function renderAcademy() {
     const report = Engine.academyReport(state);
+    const pathway = Engine.youthPathwayReport(state);
     const top = report.top ? report.top.prospect : null;
     return `
       <div class="grid four">
@@ -969,6 +970,8 @@
         ${metric("Prospects", report.prospects.length, `${report.highCeiling.length} high ceiling`)}
         ${metric("Avg Potential", report.averagePotential || "-", `${report.averageReadiness || 0}/100 readiness`)}
         ${metric("Standout", top ? top.displayName || top.name : "-", top ? `${top.currentAbility}/${top.potential} CA/PA` : "No prospects")}
+        ${metric("Active Loans", pathway.activeLoans.length, `${pathway.candidates.length} candidates`)}
+        ${metric("Pathway Risk", pathway.atRisk, `${pathway.kept} kept`)}
       </div>
 
       <div class="grid two section-gap academy-layout">
@@ -986,8 +989,111 @@
       </div>
 
       <div class="panel section-gap">
+        <div class="ratings-heading">
+          <h2 class="panel-title">Loan Pathway</h2>
+          <span class="pill ${pathway.atRisk ? "amber" : "green"}">${pathway.promises.length} active promises</span>
+        </div>
+        ${renderYouthPathway(pathway)}
+      </div>
+
+      <div class="panel section-gap">
         <h2 class="panel-title">Academy Reports</h2>
         ${renderAcademyReports(report.reports)}
+      </div>
+    `;
+  }
+
+  function renderYouthPathway(pathway) {
+    return `
+      <div class="grid two pathway-layout">
+        <div>
+          <h3 class="panel-title">Active Loan Spells</h3>
+          ${renderActiveYouthLoans(pathway.activeLoans)}
+        </div>
+        <div>
+          <h3 class="panel-title">Recommended Outgoing Loans</h3>
+          ${renderYouthLoanCandidates(pathway.candidates)}
+        </div>
+      </div>
+      ${pathway.promises.length ? `
+        <div class="pathway-promise-strip">
+          ${pathway.promises.slice(0, 5).map((report) => {
+            const player = Engine.getPlayer(state, report.playerId);
+            return `
+              <button class="pathway-promise" data-action="view-player" data-player-id="${escapeAttr(report.playerId)}">
+                <span>
+                  <strong>${player ? escapeHtml(displayPlayerName(player)) : "Player"}</strong>
+                  <small>${escapeHtml(report.detail)} | due ${escapeHtml(Engine.formatGameDate(report.dueDate))}</small>
+                </span>
+                <em class="badge ${report.tone}">${report.progress}% ${escapeHtml(report.label)}</em>
+              </button>
+            `;
+          }).join("")}
+        </div>
+      ` : ""}
+    `;
+  }
+
+  function renderActiveYouthLoans(rows) {
+    if (!rows.length) return `<div class="empty-state">No prospects are currently out on pathway loans.</div>`;
+    return `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Player</th><th>Club</th><th>Fit</th><th>Apps</th><th>Mins</th><th>Avg</th><th>Promise</th></tr></thead>
+          <tbody>
+            ${rows.map(({ player, club, loan, promise }) => `
+              <tr>
+                <td>${playerNameButton(player)}</td>
+                <td>
+                  <strong>${escapeHtml(club ? club.name : loan.destinationName)}</strong>
+                  <div class="small-muted">${escapeHtml(loan.destinationLevel || "Loan")}</div>
+                </td>
+                <td><span class="badge ${loan.fitScore >= 82 ? "green" : loan.fitScore >= 68 ? "blue" : "amber"}">${loan.fitScore}/100</span></td>
+                <td>${loan.appearances || 0}</td>
+                <td>${loan.minutes || 0}</td>
+                <td>${loan.averageRating || "-"}</td>
+                <td>${promise ? `<span class="badge ${promise.tone}">${promise.progress}% ${escapeHtml(promise.label)}</span>` : "-"}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderYouthLoanCandidates(rows) {
+    if (!rows.length) return `<div class="empty-state">No suitable senior prospects need a loan right now.</div>`;
+    return `
+      <div class="pathway-candidate-list">
+        ${rows.slice(0, 6).map(({ player, bestDestination, destinations, promise }) => `
+          <article class="pathway-candidate">
+            <div class="pathway-candidate-head">
+              <span>
+                ${playerNameButton(player)}
+                <small>${positionBadge(player.position)} ${player.age} yrs | ${player.currentAbility}/${player.potential} CA/PA | ${Engine.squadRoleLabel(player.squadRole)}</small>
+              </span>
+              ${promise ? `<em class="badge ${promise.tone}">${promise.progress}% pathway</em>` : `<em class="badge blue">New pathway</em>`}
+            </div>
+            ${bestDestination ? `
+              <div class="loan-fit-card">
+                <div>
+                  <strong>${escapeHtml(bestDestination.name)}</strong>
+                  <small>${escapeHtml(bestDestination.level)} | ${escapeHtml(bestDestination.roleLabel)} | ${escapeHtml(bestDestination.focusLabel)}</small>
+                </div>
+                <span class="badge ${bestDestination.tone}">${bestDestination.score}/100 fit</span>
+              </div>
+              <div class="loan-fit-metrics">
+                <span>Minutes ${bestDestination.playingTime}</span>
+                <span>Level ${bestDestination.levelFit}</span>
+                <span>Role ${bestDestination.roleFit}</span>
+              </div>
+              <div class="pathway-destination-row">
+                ${destinations.slice(0, 3).map((destination) => `<span>${escapeHtml(destination.name)} <b>${destination.score}</b></span>`).join("")}
+              </div>
+              <button class="btn-primary" data-action="loan-out-youth" data-player-id="${escapeAttr(player.id)}" data-destination-id="${escapeAttr(bestDestination.destinationId)}">Loan to ${escapeHtml(bestDestination.name)}</button>
+            ` : `<div class="empty-state">No destination recommendation available.</div>`}
+          </article>
+        `).join("")}
       </div>
     `;
   }
@@ -1960,6 +2066,8 @@
     const happiness = report.happiness;
     const renewal = Engine.contractRenewalProfile(state, player.id);
     const fc26 = Engine.fc26StyleStats(player);
+    const pathway = Engine.pathwayPromiseReport(state, player.id);
+    const loanReport = Engine.playerLoanReport(state, player.id);
     const isOwnPlayer = player.clubId === state.activeClubId;
     return `
       <div class="player-detail">
@@ -1982,6 +2090,12 @@
             ${metric("Risk", risk.label, risk.detail)}
           </div>
           ${fc26 ? renderFc26Stats(fc26) : ""}
+          ${pathway || loanReport ? `
+            <div class="profile-card-grid pathway-profile-grid">
+              ${pathway ? renderPathwayProfileCard(pathway) : ""}
+              ${loanReport ? renderLoanProfileCard(loanReport) : ""}
+            </div>
+          ` : ""}
           ${isOwnPlayer ? `<div class="player-management-grid">
             <div class="field">
               <label for="squad-role">Squad Role</label>
@@ -2116,6 +2230,43 @@
           ${items.map(([label, value]) => `
             <span><strong>${Number.isFinite(value) ? value : "-"}</strong>${label}</span>
           `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderPathwayProfileCard(report) {
+    return `
+      <div class="profile-card pathway-profile-card">
+        <div class="profile-card-headline">
+          <strong>Pathway Promise</strong>
+          <span class="badge ${report.tone}">${report.progress}% ${escapeHtml(report.label)}</span>
+        </div>
+        <span>${escapeHtml(report.detail)} | due ${escapeHtml(Engine.formatGameDate(report.dueDate))}</span>
+        ${bar(report.progress, report.tone)}
+        <div class="loan-fit-metrics">
+          <span>Minutes ${report.minutesProgress}%</span>
+          <span>Training ${report.trainingProgress}%</span>
+          <span>Role ${report.tacticalProgress}%</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderLoanProfileCard(report) {
+    const loan = report.loan;
+    return `
+      <div class="profile-card pathway-profile-card">
+        <div class="profile-card-headline">
+          <strong>Loan Development</strong>
+          <span class="badge ${loan.status === "complete" ? "green" : "blue"}">${escapeHtml(loan.status === "complete" ? loan.outcome || "Complete" : "Active")}</span>
+        </div>
+        <span>${escapeHtml(loan.destinationName)} | ${loan.appearances || 0} apps | ${loan.minutes || 0} mins | ${loan.averageRating || "-"} avg</span>
+        ${bar(report.progress, report.progress >= 76 ? "green" : report.progress >= 58 ? "blue" : "amber")}
+        <div class="loan-fit-metrics">
+          <span>Fit ${loan.fitScore}</span>
+          <span>${escapeHtml(loan.roleLabel || "-")}</span>
+          <span>${escapeHtml(loan.focusLabel || "-")}</span>
         </div>
       </div>
     `;
@@ -3081,6 +3232,14 @@
     }
     if (action === "loan-player") {
       const result = Engine.loanPlayer(state, actionEl.dataset.playerId);
+      syncLineupSelection();
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (action === "loan-out-youth") {
+      const result = Engine.loanOutYouthPlayer(state, actionEl.dataset.playerId, actionEl.dataset.destinationId);
       syncLineupSelection();
       Storage.save(state);
       toast(result.message, result.ok ? "good" : "bad");

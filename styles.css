@@ -2691,6 +2691,122 @@ tr.highlight td {
   align-items: start;
 }
 
+.pathway-layout {
+  align-items: start;
+  margin-top: 10px;
+}
+
+.pathway-candidate-list {
+  display: grid;
+  gap: 10px;
+}
+
+.pathway-candidate {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-soft);
+}
+
+.pathway-candidate-head,
+.loan-fit-card,
+.profile-card-headline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pathway-candidate-head > span,
+.loan-fit-card > div {
+  min-width: 0;
+}
+
+.pathway-candidate-head small,
+.loan-fit-card small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.loan-fit-card {
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--blue) 22%, var(--line));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--blue-soft) 34%, var(--panel));
+}
+
+.loan-fit-metrics,
+.pathway-destination-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.loan-fit-metrics span,
+.pathway-destination-row span {
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--panel-soft) 72%, transparent);
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.pathway-promise-strip {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pathway-promise {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--panel-soft) 82%, transparent);
+  text-align: left;
+}
+
+.pathway-promise span {
+  min-width: 0;
+}
+
+.pathway-promise strong,
+.pathway-promise small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pathway-promise small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pathway-profile-grid {
+  margin: 12px 0 0;
+}
+
+.pathway-profile-card {
+  gap: 9px;
+}
+
 .attribute-chip-list.compact {
   max-width: 260px;
 }
