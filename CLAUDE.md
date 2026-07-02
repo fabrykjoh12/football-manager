@@ -231,7 +231,7 @@ Design target:
 - `ede7f0a` Add contracts and morale systems
 - `298e0b9` Add youth academy and scouting network
 - `c0e3763` Fix rating potentials and profile labels
-- `e20dd82` Add staff room and tactical roles
+- `bccc3c9` Add staff room and tactical roles
 
 The latest completed feature phase is Staff Room + Tactical Roles.
 
