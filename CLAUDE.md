@@ -285,6 +285,19 @@ Design target:
 - Browser QA covered desktop Tactics controls, player profile Role Development cards, console errors, and the profile overflow fix.
 - CSS polish fixed narrow profile progress bars and mobile nav hit-target overlap.
 
+### Matchday Tactical Management + Assistant Reports
+
+- Tactics screen now includes reusable tactical plan presets: Balanced Plan, Control Game, High Press, Protect Lead, Chase Goal, Counter Plan, and Wide Service.
+- Match Day now has a Touchline Orders panel with live controls for mentality, pressing, tempo, width, defensive line, and attack focus.
+- Live touchline changes update the club's current tactical plan, store a touchline log, and can be applied directly from assistant recommendations.
+- Assistant Report now reads score state, match minute, xG, shots, pass accuracy, counters, phase strengths, instruction cohesion, and staff quality.
+- Assistant recommendations can trigger direct tactical actions or preset changes.
+- Substitution Watch recommends changes based on rating, fitness, minutes, cards, mistakes, positional cover, and bench suitability.
+- Full-time Tactical Review grades the active club, compares match phases, explains xG/phase patterns, and highlights tactical lessons.
+- Match Day UI was upgraded with responsive command panels, assistant cards, preset cards, substitution cards, and phase review rows.
+- Regression tests cover tactical presets, live assistant reports, substitution recommendation payloads, and post-match tactical reviews.
+- Browser QA covered Tactics presets and Match Day management panels with no console errors or desktop overflow.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
@@ -303,21 +316,22 @@ Design target:
 - `ea324bc` Upgrade premium UI design system
 - `e4c6b13` Add youth loans and pathway promises
 - `75fec53` Add player instructions and role mastery
+- `ada8828` Add matchday tactical management
 
-The latest completed feature phase is Individual Player Instructions + Role Milestones.
+The latest completed feature phase is Matchday Tactical Management + Assistant Reports.
 
 ## Current Roadmap
 
-### Next Phase: Matchday Tactical Management + Assistant Reports
+### Next Phase: Opposition Scouting + Match Prep 2.0
 
 Planned work:
 
-- Live-match tactical changes for mentality, pressing, tempo, width, line, and focus while the commentary is running.
-- Assistant recommendations during matches based on scoreline, fatigue, cards, role fit, and opponent phase strengths.
-- Substitution recommendations that explain the tradeoff: fitness, rating, role fit, tactical need, and promise/minutes pressure.
-- Post-match tactical review that links xG, shots, phase strengths, player instructions, role mastery, and fatigue outcomes.
-- Saved tactical presets so managers can switch between common plans without rebuilding every control.
-- Regression tests for in-match changes, recommendation triggers, post-match analysis, and preset migration.
+- Pre-match opposition reports with danger players, style tendencies, form, strengths, weaknesses, and likely tactical pressure points.
+- Match-prep recommendations that choose training prep, tactical preset, and player instructions from the opposition report.
+- Opponent-specific scouting confidence that improves with analysis staff quality and recent scouting coverage.
+- Key-player plans for marking, pressing, wide containment, and set-piece threats.
+- Dashboard and Match Day surfaces that show the next opponent report before kickoff.
+- Regression tests for opposition report generation, prep recommendations, staff/scouting confidence, and UI-safe old-save migration.
 
 ### Later Phases
 
