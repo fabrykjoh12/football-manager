@@ -298,6 +298,17 @@ Design target:
 - Regression tests cover tactical presets, live assistant reports, substitution recommendation payloads, and post-match tactical reviews.
 - Browser QA covered Tactics presets and Match Day management panels with no console errors or desktop overflow.
 
+### Opposition Scouting + Match Prep 2.0
+
+- Engine now generates pre-match opposition reports for the next fixture.
+- Reports identify opponent style tags, tactical tendencies, pressure points, danger players, strengths, weaknesses, key-player plans, and tactical edge.
+- Report confidence is bounded and now reflects analysis staff quality, scouting staff quality, active player assignments, scout report coverage, and days until kickoff.
+- Reports recommend a weekly training plan, match-prep focus, tactical preset, and slot-level player instructions.
+- Apply Prep sets the recommended training, match prep, tactical preset, and player instructions in one action, then creates an inbox note.
+- Dashboard, Tactics, Training, and Match Day now surface the opposition report before kickoff.
+- The report UI is responsive, uses compact analysis cards, and passed desktop/mobile overflow checks.
+- Regression tests cover report generation, valid prep recommendations, Apply Prep persistence, and inbox creation.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
@@ -317,21 +328,22 @@ Design target:
 - `e4c6b13` Add youth loans and pathway promises
 - `75fec53` Add player instructions and role mastery
 - `ada8828` Add matchday tactical management
+- `90878ca` Add opposition scouting prep reports
 
-The latest completed feature phase is Matchday Tactical Management + Assistant Reports.
+The latest completed feature phase is Opposition Scouting + Match Prep 2.0.
 
 ## Current Roadmap
 
-### Next Phase: Opposition Scouting + Match Prep 2.0
+### Next Phase: Manager Media + Player Conversations
 
 Planned work:
 
-- Pre-match opposition reports with danger players, style tendencies, form, strengths, weaknesses, and likely tactical pressure points.
-- Match-prep recommendations that choose training prep, tactical preset, and player instructions from the opposition report.
-- Opponent-specific scouting confidence that improves with analysis staff quality and recent scouting coverage.
-- Key-player plans for marking, pressing, wide containment, and set-piece threats.
-- Dashboard and Match Day surfaces that show the next opponent report before kickoff.
-- Regression tests for opposition report generation, prep recommendations, staff/scouting confidence, and UI-safe old-save migration.
+- Pre-match and post-match media questions driven by form, board pressure, big fixtures, transfers, youth development, and rival matches.
+- Player conversation events for playing-time concerns, contract mood, tactical-role confusion, loan pathway promises, transfer interest, and morale dips.
+- Choice-based outcomes that affect morale, happiness, promises, media pressure, and dressing-room trust.
+- Inbox and dashboard surfaces that route the manager to active conversations before simming forward.
+- Profile and squad context showing recent conversations and promises.
+- Regression tests for conversation generation, choice outcomes, morale changes, and save migration safety.
 
 ### Later Phases
 
