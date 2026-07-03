@@ -1778,6 +1778,235 @@ tr.highlight td {
   overflow: hidden;
 }
 
+.matchday-management {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.9fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.matchday-management .panel {
+  min-width: 0;
+}
+
+.touchline-panel {
+  grid-row: span 2;
+}
+
+.touchline-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.touchline-control {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--panel-soft);
+}
+
+.touchline-control span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.touchline-presets {
+  margin-top: 12px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.preset-card {
+  min-width: 0;
+  min-height: 74px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px;
+  text-align: left;
+  white-space: normal;
+}
+
+.preset-card strong,
+.preset-card span {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.preset-card strong {
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.preset-card span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+  font-weight: 720;
+}
+
+.assistant-advice-list,
+.sub-recommendation-list {
+  display: grid;
+  gap: 8px;
+}
+
+.assistant-advice-list.compact {
+  margin-top: 10px;
+}
+
+.assistant-card,
+.sub-recommendation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--panel-soft);
+}
+
+.assistant-card.green,
+.sub-recommendation.green {
+  border-color: color-mix(in srgb, var(--green) 28%, var(--line));
+  background: var(--green-soft);
+}
+
+.assistant-card.amber,
+.sub-recommendation.amber {
+  border-color: color-mix(in srgb, var(--amber) 28%, var(--line));
+  background: var(--amber-soft);
+}
+
+.assistant-card.red,
+.sub-recommendation.red {
+  border-color: color-mix(in srgb, var(--red) 28%, var(--line));
+  background: var(--red-soft);
+}
+
+.assistant-card div,
+.sub-recommendation div {
+  min-width: 0;
+}
+
+.assistant-card strong,
+.assistant-card span,
+.sub-recommendation strong,
+.sub-recommendation small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.assistant-card strong,
+.sub-recommendation strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.assistant-card span,
+.sub-recommendation small {
+  margin-top: 3px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 720;
+}
+
+.sub-recommendation {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.touchline-log .timeline-item {
+  grid-template-columns: 48px minmax(0, 1fr);
+}
+
+.post-match-review {
+  display: grid;
+  gap: 10px;
+}
+
+.review-grade {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.review-grade strong {
+  color: var(--ink);
+  font-size: 38px;
+  line-height: 0.95;
+  font-weight: 950;
+}
+
+.review-grade span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.phase-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.phase-review-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 9px;
+  background: var(--panel-soft);
+}
+
+.phase-review-row span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.phase-review-row strong {
+  flex: 0 0 auto;
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.phase-review-row strong.green {
+  color: var(--green);
+}
+
+.phase-review-row strong.amber {
+  color: var(--amber);
+}
+
 .match-centre-meta {
   display: flex;
   align-items: center;
@@ -3806,6 +4035,7 @@ button:hover {
   .dashboard-command,
   .lineup-layout,
   .tactics-layout,
+  .matchday-management,
   .training-layout,
   .staff-layout,
   .role-layout,
@@ -3818,6 +4048,7 @@ button:hover {
   }
 
   .tactics-layout .panel:first-child,
+  .touchline-panel,
   .training-calendar-panel,
   .staff-departments-panel {
     grid-row: auto;
@@ -3956,10 +4187,13 @@ button:hover {
     min-height: 620px;
   }
 
-  .match-centre-board,
-  .analysis-grid,
-  .tactic-grid,
-  .training-controls,
+    .match-centre-board,
+    .analysis-grid,
+    .tactic-grid,
+    .touchline-controls,
+    .preset-grid,
+    .phase-review-grid,
+    .training-controls,
   .player-management-grid,
   .profile-card-grid,
   .need-grid,

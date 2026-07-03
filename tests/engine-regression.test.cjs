@@ -200,6 +200,11 @@ function run() {
   assert.equal(tactic.ok, true, "Tactic settings should be editable");
   assert.equal(activeClub.tactics.pressing, "high", "Tactic change should persist");
   assert.ok(Engine.tacticalProfile(activeClub).intensity > 50, "High pressing should increase tactical intensity");
+  const tacticalPresets = Engine.tacticalPresetOptions();
+  assert.ok(tacticalPresets.length >= 5, "Tactical presets should be available");
+  const presetResult = Engine.applyTacticalPreset(save, activeClub.id, "protectLead");
+  assert.equal(presetResult.ok, true, "Tactical presets should apply to the active club");
+  assert.equal(activeClub.tactics.mentality, "cautious", "Protect Lead preset should change mentality");
   const autoPlan = Engine.autoSetTactics(save, activeClub.id);
   assert.equal(autoPlan.ok, true, "Auto match plan should generate tactics");
   assert.ok(activeClub.tactics.focus, "Auto match plan should keep a valid attacking focus");
@@ -429,6 +434,13 @@ function run() {
   assert.ok(roundResult.activeMatch.analysis.summary, "Deep match engine should explain the result");
   assert.ok(roundResult.activeMatch.stats.passAccuracy.home >= 55, "Tactics should preserve plausible passing stats");
   assert.ok(Number.isFinite(roundResult.activeMatch.teamPhaseStrengths.home.instructionCohesion), "Deep match engine should expose instruction cohesion");
+  const activeMatchSide = roundResult.activeMatch.homeClubId === save.activeClubId ? "home" : "away";
+  const liveReport = Engine.liveMatchAssistantReport(save, roundResult.activeMatch, 70, roundResult.activeMatch.goals, roundResult.activeMatch.tactics[activeMatchSide]);
+  assert.ok(liveReport && liveReport.advice.length > 0, "Live assistant report should produce tactical advice");
+  assert.ok(Array.isArray(liveReport.substitutions), "Live assistant report should include substitution recommendations");
+  const tacticalReview = Engine.postMatchTacticalReview(save, roundResult.activeMatch);
+  assert.ok(tacticalReview && tacticalReview.grade, "Post-match tactical review should grade the active club performance");
+  assert.ok(tacticalReview.phaseRows.length >= 4, "Post-match tactical review should include phase rows");
 
   const subSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 2468 });
   const subClub = Engine.getClub(subSave, subSave.activeClubId);

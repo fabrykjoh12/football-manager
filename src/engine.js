@@ -695,6 +695,43 @@
     line: "standard",
     focus: "mixed"
   };
+  const TACTICAL_PRESETS = {
+    balanced: {
+      label: "Balanced Plan",
+      description: "Keeps the side compact without overcommitting in either direction.",
+      tactics: { mentality: "balanced", pressing: "standard", tempo: "balanced", width: "balanced", line: "standard", focus: "mixed" }
+    },
+    control: {
+      label: "Control Game",
+      description: "Slows the match down through possession, central support, and safer pressing.",
+      tactics: { mentality: "positive", pressing: "standard", tempo: "patient", width: "narrow", line: "standard", focus: "central" }
+    },
+    highPress: {
+      label: "High Press",
+      description: "Raises pressure and territory to force mistakes high up the pitch.",
+      tactics: { mentality: "positive", pressing: "high", tempo: "direct", width: "balanced", line: "high", focus: "mixed" }
+    },
+    protectLead: {
+      label: "Protect Lead",
+      description: "Drops risk, protects central spaces, and preserves legs late in the match.",
+      tactics: { mentality: "cautious", pressing: "regroup", tempo: "patient", width: "narrow", line: "deep", focus: "counter" }
+    },
+    chaseGame: {
+      label: "Chase Goal",
+      description: "Adds runners, tempo, and pressing to force late chances.",
+      tactics: { mentality: "attacking", pressing: "high", tempo: "vertical", width: "balanced", line: "high", focus: "mixed" }
+    },
+    counterAway: {
+      label: "Counter Plan",
+      description: "Absorbs pressure, protects depth, and attacks space quickly.",
+      tactics: { mentality: "cautious", pressing: "regroup", tempo: "direct", width: "balanced", line: "deep", focus: "counter" }
+    },
+    wideService: {
+      label: "Wide Service",
+      description: "Uses touchline width, crossing, and set-piece pressure.",
+      tactics: { mentality: "positive", pressing: "standard", tempo: "direct", width: "wide", line: "standard", focus: "flanks" }
+    }
+  };
   const DOMESTIC_CUP_ROUNDS = [
     { key: "playoff", label: "Third Round Play-Off", date: [9, 22], prize: 450000 },
     { key: "round16", label: "Round of 16", date: [10, 27], prize: 700000 },
@@ -4007,6 +4044,33 @@
     return { ok: true, message: "Tactics updated." };
   }
 
+  function tacticalPresetOptions() {
+    return Object.entries(TACTICAL_PRESETS).map(([key, preset]) => ({
+      key,
+      label: preset.label,
+      description: preset.description,
+      tactics: normalizeTactics(preset.tactics)
+    }));
+  }
+
+  function tacticalPresetLabel(presetKey) {
+    return TACTICAL_PRESETS[presetKey] ? TACTICAL_PRESETS[presetKey].label : presetKey || "-";
+  }
+
+  function applyTacticalPreset(state, clubId, presetKey) {
+    const club = getClub(state, clubId);
+    const preset = TACTICAL_PRESETS[presetKey];
+    if (!club || !preset) return { ok: false, message: "Tactical preset unavailable." };
+    club.tactics = normalizeTactics({ ...club.tactics, ...preset.tactics });
+    return {
+      ok: true,
+      message: `${preset.label} applied.`,
+      presetKey,
+      label: preset.label,
+      tactics: normalizeTactics(club.tactics)
+    };
+  }
+
   function autoSetTactics(state, clubId) {
     const club = getClub(state, clubId);
     if (!club) return { ok: false, message: "Club not found." };
@@ -4119,6 +4183,270 @@
     const keeper = average((keepers.length ? keepers : lineup).map((item) => adjustedRoleScore(item.player, item.slot, "keeper", item.roleKey, item.instructionKey)));
     const overall = attack * 0.28 + midfield * 0.28 + defense * 0.28 + keeper * 0.16;
     return { attack, midfield, defense, keeper, overall };
+  }
+
+  function activeMatchSide(match, clubId) {
+    if (!match || !clubId) return null;
+    if (match.homeClubId === clubId) return "home";
+    if (match.awayClubId === clubId) return "away";
+    return null;
+  }
+
+  function sideClubId(match, side) {
+    return side === "home" ? match.homeClubId : match.awayClubId;
+  }
+
+  function oppositeSide(side) {
+    return side === "home" ? "away" : "home";
+  }
+
+  function matchStat(match, key, side) {
+    const row = match && match.stats && match.stats[key];
+    const value = row && Number(row[side]);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function scoreAtMinute(match, minute, visibleGoals) {
+    if (!match) return { home: 0, away: 0 };
+    const useVisible = Array.isArray(visibleGoals) && visibleGoals.length;
+    const goals = useVisible ? visibleGoals : (match.goals || []).filter((goal) => !Number.isFinite(minute) || minute >= 90 || Number(goal.minute || 0) <= minute);
+    if (!useVisible && Number.isFinite(minute) && minute >= 90) return { home: match.homeGoals || 0, away: match.awayGoals || 0 };
+    return {
+      home: goals.filter((goal) => goal.clubId === match.homeClubId).length,
+      away: goals.filter((goal) => goal.clubId === match.awayClubId).length
+    };
+  }
+
+  function phaseValue(match, side, key) {
+    const phases = match && match.teamPhaseStrengths && match.teamPhaseStrengths[side];
+    const value = phases && Number(phases[key]);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function phaseLabel(key) {
+    const labels = {
+      attackStrength: "Attack",
+      chanceCreation: "Chance Creation",
+      buildUpQuality: "Build-Up",
+      pressingStrength: "Press",
+      defensiveStability: "Defensive Shape",
+      chancePrevention: "Chance Prevention",
+      wideThreat: "Wide Threat",
+      centralThreat: "Central Threat",
+      defensiveTransition: "Defensive Transition",
+      instructionCohesion: "Instruction Cohesion"
+    };
+    return labels[key] || key;
+  }
+
+  function pushAssistantAdvice(list, tone, title, body, action) {
+    list.push({
+      tone,
+      title,
+      body,
+      key: action && action.key,
+      value: action && action.value,
+      presetKey: action && action.presetKey,
+      actionLabel: action && action.label
+    });
+  }
+
+  function liveMatchAssistantReport(state, match, minute, visibleGoals, liveTactics) {
+    if (!state || !match) return null;
+    const side = activeMatchSide(match, state.activeClubId);
+    if (!side) return null;
+    const other = oppositeSide(side);
+    const club = getClub(state, state.activeClubId);
+    const opponent = getClub(state, sideClubId(match, other));
+    const score = scoreAtMinute(match, minute, visibleGoals);
+    const ownScore = side === "home" ? score.home : score.away;
+    const opponentScore = side === "home" ? score.away : score.home;
+    const scoreDiff = ownScore - opponentScore;
+    const ownXg = matchStat(match, "xg", side);
+    const opponentXg = matchStat(match, "xg", other);
+    const ownShots = matchStat(match, "shots", side);
+    const opponentShots = matchStat(match, "shots", other);
+    const passAccuracy = matchStat(match, "passAccuracy", side);
+    const pressTurnovers = matchStat(match, "pressTurnovers", side);
+    const opponentCounters = matchStat(match, "counterattacks", other);
+    const currentTactics = normalizeTactics(liveTactics || (match.tactics && match.tactics[side]) || (club && club.tactics));
+    const staff = staffEffectsForClub(state, state.activeClubId);
+    const phaseRows = ["attackStrength", "chanceCreation", "buildUpQuality", "pressingStrength", "defensiveStability", "chancePrevention", "instructionCohesion"].map((key) => {
+      const own = phaseValue(match, side, key);
+      const opp = phaseValue(match, other, key);
+      return {
+        key,
+        label: phaseLabel(key),
+        own,
+        opponent: opp,
+        edge: round(own - opp, 1),
+        tone: own >= opp + 4 ? "green" : own <= opp - 4 ? "amber" : "blue"
+      };
+    });
+    const advice = [];
+
+    if (scoreDiff < 0 && minute >= 50) {
+      pushAssistantAdvice(advice, "red", "Chase The Game", `${opponent ? opponent.name : "The opponent"} are ahead. Add runners and tempo before the match settles.`, { presetKey: "chaseGame", label: "Chase Goal" });
+    }
+    if (scoreDiff > 0 && minute >= 62) {
+      pushAssistantAdvice(advice, "green", "Protect The Lead", "The scoreline is yours. Lower the line and reduce transition risk.", { presetKey: "protectLead", label: "Protect Lead" });
+    }
+    if (opponentCounters >= 3 && currentTactics.line === "high") {
+      pushAssistantAdvice(advice, "amber", "Space Behind", "The high line is inviting counters. Drop the back line before another transition lands.", { key: "line", value: "standard", label: "Drop Line" });
+    }
+    if (passAccuracy && passAccuracy < 68) {
+      pushAssistantAdvice(advice, "amber", "Passing Stability", `Passing accuracy is only ${passAccuracy}%. Slower tempo should help the first pass out.`, { key: "tempo", value: "patient", label: "Slow Tempo" });
+    }
+    if (ownXg < opponentXg - 0.35 && scoreDiff <= 0 && minute >= 35) {
+      pushAssistantAdvice(advice, "amber", "Chance Quality", "The chance quality is slipping. Shift the focus to more direct creation.", { key: "focus", value: "central", label: "Go Central" });
+    }
+    if (phaseValue(match, side, "wideThreat") > phaseValue(match, other, "defensiveWidth") + 5 && currentTactics.focus !== "flanks") {
+      pushAssistantAdvice(advice, "blue", "Wide Advantage", "Wide matchups are favourable. Move the attack toward the flanks.", { presetKey: "wideService", label: "Use Width" });
+    }
+    if (phaseValue(match, side, "pressingStrength") > phaseValue(match, other, "buildUpQuality") + 5 && pressTurnovers < 3 && currentTactics.pressing !== "high") {
+      pushAssistantAdvice(advice, "blue", "Press Trigger", "The matchup can support more pressure. A higher press could force rushed passes.", { key: "pressing", value: "high", label: "Press Higher" });
+    }
+    if (phaseValue(match, side, "instructionCohesion") < -1.5) {
+      pushAssistantAdvice(advice, "amber", "Instruction Cohesion", "Several individual instructions are pulling against the team shape. Simplify duties next time.", null);
+    }
+    if (!advice.length) {
+      pushAssistantAdvice(advice, "blue", "Stay Connected", `${club ? club.name : "Your team"} are close enough in the key phases. Keep the plan stable for now.`, { presetKey: currentTactics.mentality === "cautious" ? "counterAway" : "balanced", label: "Hold Shape" });
+    }
+
+    const assistantConfidence = Math.round(clamp(66 + staff.assistantInsight + Math.max(0, minute - 45) * 0.15, 45, 92));
+    return {
+      side,
+      opponentClubId: sideClubId(match, other),
+      minute,
+      score: { own: ownScore, opponent: opponentScore, diff: scoreDiff },
+      xg: { own: ownXg, opponent: opponentXg, diff: round(ownXg - opponentXg, 2) },
+      shots: { own: ownShots, opponent: opponentShots },
+      currentTactics,
+      assistantConfidence,
+      advice: advice.slice(0, 4),
+      substitutions: substitutionRecommendations(state, match, side, minute).slice(0, 3),
+      phaseRows
+    };
+  }
+
+  function substitutionRecommendations(state, match, side, minute) {
+    if (!state || !match || minute < 45) return [];
+    const clubId = sideClubId(match, side);
+    const club = getClub(state, clubId);
+    if (!club) return [];
+    const appeared = new Set((match.playerRatings || []).filter((rating) => rating.clubId === clubId).map((rating) => rating.playerId));
+    const starters = (match.playerRatings || [])
+      .filter((rating) => rating.clubId === clubId && rating.started)
+      .map((rating) => ({ rating, player: getPlayer(state, rating.playerId), stats: match.playerStats && match.playerStats[rating.playerId] ? match.playerStats[rating.playerId] : {} }))
+      .filter((row) => row.player);
+    let bench = (club.bench || []).map((id) => getPlayer(state, id)).filter(Boolean).filter((player) => !isUnavailable(state, player) && !appeared.has(player.id));
+    if (!bench.length) bench = (club.bench || []).map((id) => getPlayer(state, id)).filter(Boolean).filter((player) => !isUnavailable(state, player));
+
+    return starters
+      .map((row) => {
+        const risk = substitutionRiskScore(row.player, row.rating, row.stats, minute);
+        const candidate = bestSubstitutionCandidate(row.player, bench);
+        if (!candidate || risk < 8) return null;
+        const tacticalGain = round(candidate.score - row.player.currentAbility * 0.1, 1);
+        return {
+          playerOutId: row.player.id,
+          playerInId: candidate.player.id,
+          score: Math.round(clamp(risk + Math.max(0, tacticalGain), 1, 100)),
+          tone: risk >= 24 ? "red" : risk >= 15 ? "amber" : "blue",
+          reason: substitutionReasonLabel(row.player, row.rating, row.stats),
+          detail: `${playerDisplayName(candidate.player)} covers ${candidate.fitLabel} with ${Math.round(candidate.player.fitness || 70)}% fitness.`,
+          minute
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score);
+  }
+
+  function substitutionRiskScore(player, rating, stats, minute) {
+    const matchRating = rating && Number.isFinite(rating.rating) ? rating.rating : 6.6;
+    const fitness = Number(player.fitness || 72);
+    const yellow = stats && stats.yellowCards ? 1 : 0;
+    const mistakes = stats && stats.mistakes ? stats.mistakes : 0;
+    const minutes = stats && Number.isFinite(stats.minutes) ? stats.minutes : minute;
+    return clamp(
+      (matchRating < 6.5 ? (6.7 - matchRating) * 14 : 0) +
+      (fitness < 70 ? (70 - fitness) * 0.5 : 0) +
+      (minutes >= 65 ? 4 : 0) +
+      yellow * 7 +
+      mistakes * 5,
+      0,
+      60
+    );
+  }
+
+  function bestSubstitutionCandidate(outgoing, bench) {
+    if (!outgoing || !bench.length) return null;
+    return bench
+      .map((player) => {
+        const exact = player.position === outgoing.position;
+        const secondary = (player.secondaryPositions || []).includes(outgoing.position);
+        const band = positionBand(player.position) === positionBand(outgoing.position);
+        const positionFit = exact ? 18 : secondary ? 13 : band ? 8 : player.position === "GK" || outgoing.position === "GK" ? -25 : 0;
+        const fitnessLift = (player.fitness || 70) * 0.08;
+        const formLift = average(player.form || []) * 1.8;
+        const score = player.currentAbility * 0.1 + positionFit + fitnessLift + formLift;
+        return {
+          player,
+          score,
+          fitLabel: exact ? outgoing.position : secondary ? `${outgoing.position} cover` : band ? positionBand(outgoing.position) : "emergency cover"
+        };
+      })
+      .sort((a, b) => b.score - a.score)[0] || null;
+  }
+
+  function substitutionReasonLabel(player, rating, stats) {
+    if (stats && stats.yellowCards) return "card risk";
+    if (stats && stats.mistakes >= 2) return "mistakes";
+    if (rating && rating.rating < 6.4) return "low rating";
+    if (player && player.fitness < 68) return "fatigue";
+    return "fresh legs";
+  }
+
+  function postMatchTacticalReview(state, match) {
+    if (!state || !match) return null;
+    const side = activeMatchSide(match, state.activeClubId);
+    if (!side) return null;
+    const other = oppositeSide(side);
+    const scoreDiff = (side === "home" ? match.homeGoals - match.awayGoals : match.awayGoals - match.homeGoals) || 0;
+    const xgDiff = round(matchStat(match, "xg", side) - matchStat(match, "xg", other), 2);
+    const phaseRows = ["chanceCreation", "buildUpQuality", "pressingStrength", "defensiveStability", "chancePrevention", "instructionCohesion"].map((key) => {
+      const own = phaseValue(match, side, key);
+      const opponent = phaseValue(match, other, key);
+      return {
+        key,
+        label: phaseLabel(key),
+        own,
+        opponent,
+        edge: round(own - opponent, 1),
+        tone: own >= opponent + 4 ? "green" : own <= opponent - 4 ? "amber" : "blue"
+      };
+    });
+    const phaseScore = average(phaseRows.map((row) => row.edge));
+    const reviewScore = Math.round(clamp(62 + scoreDiff * 10 + xgDiff * 10 + phaseScore * 0.35, 28, 96));
+    const grade = reviewScore >= 86 ? "A" : reviewScore >= 74 ? "B" : reviewScore >= 62 ? "C" : reviewScore >= 50 ? "D" : "E";
+    const notes = [];
+    if (xgDiff >= 0.35) notes.push({ tone: "green", title: "Chance Quality", body: `Your chance quality led by ${xgDiff} xG.` });
+    if (xgDiff <= -0.35) notes.push({ tone: "amber", title: "Chance Quality", body: `You lost the xG battle by ${Math.abs(xgDiff)}.` });
+    const bestPhase = phaseRows.slice().sort((a, b) => b.edge - a.edge)[0];
+    const weakestPhase = phaseRows.slice().sort((a, b) => a.edge - b.edge)[0];
+    if (bestPhase && bestPhase.edge > 2) notes.push({ tone: "green", title: bestPhase.label, body: `This phase gave you a ${bestPhase.edge > 0 ? "+" : ""}${bestPhase.edge} edge.` });
+    if (weakestPhase && weakestPhase.edge < -2) notes.push({ tone: "amber", title: weakestPhase.label, body: `This phase trailed by ${Math.abs(weakestPhase.edge)} and needs attention.` });
+    if (matchStat(match, "pressTurnovers", side) >= 3) notes.push({ tone: "blue", title: "Pressing Output", body: `${matchStat(match, "pressTurnovers", side)} dangerous turnovers came from pressure.` });
+    if (matchStat(match, "substitutions", side) <= 1 && matchStat(match, "substitutions", other) >= 3) notes.push({ tone: "amber", title: "Bench Timing", body: "The opponent changed the rhythm with more bench intervention." });
+    if (!notes.length) notes.push({ tone: "blue", title: "Tactical Balance", body: "The match was decided by small margins across the main phases." });
+    return {
+      side,
+      grade,
+      score: reviewScore,
+      summary: `${grade} tactical review | ${scoreDiff > 0 ? "Result protected" : scoreDiff < 0 ? "Result escaped" : "Balanced result"} | ${xgDiff > 0 ? "+" : ""}${xgDiff} xG edge.`,
+      notes: notes.slice(0, 5),
+      phaseRows
+    };
   }
 
   function adjustedRoleScore(player, slot, role, tacticalRoleKey, instructionKey) {
@@ -8520,6 +8848,7 @@
     STAFF_DEPARTMENTS,
     TACTICAL_ROLES,
     PLAYER_INSTRUCTIONS,
+    TACTICAL_PRESETS,
     DOMESTIC_CUP_ROUNDS,
     EUROPEAN_ROUNDS,
     DEFAULT_TACTICS,
@@ -8601,6 +8930,11 @@
     setFormation,
     setTactic,
     autoSetTactics,
+    tacticalPresetOptions,
+    tacticalPresetLabel,
+    applyTacticalPreset,
+    liveMatchAssistantReport,
+    postMatchTacticalReview,
     setTrainingPlan,
     setMatchPrep,
     autoSetTrainingPlan,

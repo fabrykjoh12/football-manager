@@ -26,6 +26,8 @@
     selectedPlayerId: null,
     lineupSelection: new Set(),
     liveMatch: null,
+    liveTactics: null,
+    liveOrders: [],
     commentaryCount: 0,
     commentaryPlaying: false,
     draggedPlayerId: null,
@@ -717,6 +719,10 @@
           </div>
         </div>
         <div class="panel">
+          <h2 class="panel-title">Plan Presets</h2>
+          ${renderTacticalPresetPanel("apply-tactical-preset")}
+        </div>
+        <div class="panel">
           <h2 class="panel-title">Next Opposition</h2>
           ${next && opponent ? renderTacticalPreview(club, opponent, profile, opponentProfile, next) : `<div class="empty-state">No upcoming fixture.</div>`}
         </div>
@@ -1224,6 +1230,19 @@
     return "Heavy";
   }
 
+  function renderTacticalPresetPanel(action) {
+    return `
+      <div class="preset-grid">
+        ${Engine.tacticalPresetOptions().map((preset) => `
+          <button class="preset-card" data-action="${escapeAttr(action)}" data-preset-key="${escapeAttr(preset.key)}">
+            <strong>${escapeHtml(preset.label)}</strong>
+            <span>${escapeHtml(preset.description)}</span>
+          </button>
+        `).join("")}
+      </div>
+    `;
+  }
+
   function renderTacticCard(group, club) {
     const value = club.tactics && club.tactics[group.key] ? club.tactics[group.key] : Engine.DEFAULT_TACTICS[group.key];
     const current = group.options.find((option) => option.value === value) || group.options[0];
@@ -1288,6 +1307,7 @@
 
     return `
       ${match ? renderLiveMatchCentre(match, minute, visibleGoals) : ""}
+      ${match ? renderMatchdayManagement(match, minute, visibleGoals) : ""}
       <div class="grid two">
         <div class="panel">
           <h2 class="panel-title">Round ${roundData ? roundData.number : state.league.currentRound}${roundData && roundData.date ? ` | ${escapeHtml(Engine.formatGameDate(roundData.date))}` : ""}</h2>
@@ -2420,6 +2440,159 @@
     `;
   }
 
+  function renderMatchdayManagement(match, minute, visibleGoals) {
+    const side = activeSideForMatch(match);
+    if (!side) return "";
+    const isLive = ui.liveMatch && ui.liveMatch.id === match.id && ui.commentaryPlaying;
+    const tactics = liveTacticsForMatch(match);
+    const report = Engine.liveMatchAssistantReport(state, match, minute, visibleGoals, tactics);
+    const review = !isLive ? Engine.postMatchTacticalReview(state, match) : null;
+    return `
+      <div class="matchday-management">
+        <div class="panel touchline-panel">
+          <div class="ratings-heading">
+            <h2 class="panel-title">Touchline Orders</h2>
+            <span class="pill ${isLive ? "green" : "blue"}">${isLive ? "Live" : "Full Time"}</span>
+          </div>
+          <div class="touchline-controls">
+            ${Data.TACTIC_GROUPS.map((group) => renderLiveTacticControl(group, tactics, !isLive)).join("")}
+          </div>
+          <div class="touchline-presets">
+            ${renderTacticalPresetPanel(isLive ? "apply-live-preset" : "apply-tactical-preset")}
+          </div>
+        </div>
+        <div class="panel assistant-panel">
+          <div class="ratings-heading">
+            <h2 class="panel-title">Assistant Report</h2>
+            <span class="pill blue">${report ? report.assistantConfidence : "-"} confidence</span>
+          </div>
+          ${report ? renderAssistantAdvice(report, isLive) : `<div class="empty-state">Assistant report unavailable.</div>`}
+        </div>
+        <div class="panel sub-recommendation-panel">
+          <h2 class="panel-title">Substitution Watch</h2>
+          ${report ? renderSubstitutionRecommendations(report.substitutions) : `<div class="empty-state">No substitution read.</div>`}
+        </div>
+        <div class="panel touchline-log-panel">
+          <h2 class="panel-title">${review ? "Tactical Review" : "Touchline Log"}</h2>
+          ${review ? renderPostMatchTacticalReviewCard(review) : renderTouchlineLog()}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderLiveTacticControl(group, tactics, disabled) {
+    const value = tactics[group.key] || Engine.DEFAULT_TACTICS[group.key];
+    return `
+      <label class="touchline-control">
+        <span>${escapeHtml(group.label)}</span>
+        <select data-action="set-live-tactic" data-tactic-key="${escapeAttr(group.key)}" ${disabled ? "disabled" : ""}>
+          ${group.options.map((option) => `<option value="${escapeAttr(option.value)}" ${option.value === value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+        </select>
+      </label>
+    `;
+  }
+
+  function renderAssistantAdvice(report, isLive) {
+    return `
+      <div class="assistant-advice-list">
+        ${report.advice.map((item) => `
+          <div class="assistant-card ${item.tone}">
+            <div>
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(item.body)}</span>
+            </div>
+            ${isLive && (item.key || item.presetKey) ? `
+              <button class="btn-compact" data-action="apply-live-advice" data-tactic-key="${escapeAttr(item.key || "")}" data-tactic-value="${escapeAttr(item.value || "")}" data-preset-key="${escapeAttr(item.presetKey || "")}">
+                ${escapeHtml(item.actionLabel || "Apply")}
+              </button>
+            ` : ""}
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderSubstitutionRecommendations(recommendations) {
+    if (!recommendations || !recommendations.length) {
+      return `<div class="empty-state">No urgent substitution signal.</div>`;
+    }
+    return `
+      <div class="sub-recommendation-list">
+        ${recommendations.map((item) => {
+          const playerOut = Engine.getPlayer(state, item.playerOutId);
+          const playerIn = Engine.getPlayer(state, item.playerInId);
+          return `
+            <div class="sub-recommendation ${item.tone}">
+              <span class="badge ${item.tone}">${item.score}</span>
+              <div>
+                <strong>${playerOut ? playerNameButton(playerOut, "name-link sub-name") : "Starter"} -> ${playerIn ? playerNameButton(playerIn, "name-link sub-name") : "Substitute"}</strong>
+                <small>${escapeHtml(item.reason)} | ${escapeHtml(item.detail)}</small>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  function renderTouchlineLog() {
+    const orders = ui.liveOrders || [];
+    if (!orders.length) return `<div class="empty-state">No touchline changes yet.</div>`;
+    return `
+      <div class="touchline-log">
+        ${orders.slice(0, 5).map((order) => `
+          <div class="timeline-item">
+            <strong>${order.minute ? `${order.minute}'` : "--"}</strong>
+            <span><b>${escapeHtml(order.title)}</b><br><span class="small-muted">${escapeHtml(order.detail)}</span></span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderPostMatchTacticalReviewCard(review) {
+    return `
+      <div class="post-match-review">
+        <div class="review-grade">
+          <strong>${escapeHtml(review.grade)}</strong>
+          <span>${review.score}/100</span>
+        </div>
+        <div class="analysis-summary">${escapeHtml(review.summary)}</div>
+        <div class="phase-review-grid">
+          ${review.phaseRows.map((row) => `
+            <div class="phase-review-row">
+              <span>${escapeHtml(row.label)}</span>
+              <strong class="${row.tone}">${row.edge > 0 ? "+" : ""}${row.edge}</strong>
+            </div>
+          `).join("")}
+        </div>
+        <div class="assistant-advice-list compact">
+          ${review.notes.map((note) => `
+            <div class="assistant-card ${note.tone}">
+              <div>
+                <strong>${escapeHtml(note.title)}</strong>
+                <span>${escapeHtml(note.body)}</span>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function activeSideForMatch(match) {
+    if (!match) return null;
+    if (match.homeClubId === state.activeClubId) return "home";
+    if (match.awayClubId === state.activeClubId) return "away";
+    return null;
+  }
+
+  function liveTacticsForMatch(match) {
+    const side = activeSideForMatch(match);
+    const source = ui.liveTactics || (side && match.tactics && match.tactics[side]) || activeClub().tactics || {};
+    return { ...Engine.DEFAULT_TACTICS, ...source };
+  }
+
   function liveMatchMinute(match, commentary) {
     const total = match.commentary ? match.commentary.length : 0;
     const isRunning = ui.liveMatch === match && ui.commentaryPlaying && ui.commentaryCount < total;
@@ -3114,6 +3287,8 @@
     if (action === "nav") {
       ui.screen = actionEl.dataset.screen;
       ui.liveMatch = null;
+      ui.liveTactics = null;
+      ui.liveOrders = [];
       render();
       return;
     }
@@ -3201,6 +3376,22 @@
       Storage.save(state);
       toast(result.message, result.ok ? "good" : "bad");
       render();
+      return;
+    }
+    if (action === "apply-tactical-preset") {
+      const result = Engine.applyTacticalPreset(state, state.activeClubId, actionEl.dataset.presetKey);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (action === "apply-live-preset") {
+      applyLiveTacticalPreset(actionEl.dataset.presetKey);
+      return;
+    }
+    if (action === "apply-live-advice") {
+      if (actionEl.dataset.presetKey) applyLiveTacticalPreset(actionEl.dataset.presetKey);
+      else applyLiveTacticChange(actionEl.dataset.tacticKey, actionEl.dataset.tacticValue);
       return;
     }
     if (action === "auto-roles") {
@@ -3389,6 +3580,10 @@
       render();
       return;
     }
+    if (target.dataset.action === "set-live-tactic") {
+      applyLiveTacticChange(target.dataset.tacticKey, target.value);
+      return;
+    }
     if (target.dataset.action === "set-tactic") {
       const result = Engine.setTactic(state, state.activeClubId, target.dataset.tacticKey, target.value);
       Storage.save(state);
@@ -3545,6 +3740,46 @@
     if (key === "regionalFocus") ui.regionalFocus = value;
   }
 
+  function applyLiveTacticChange(key, value) {
+    if (!ui.liveMatch || !ui.commentaryPlaying) return;
+    const result = Engine.setTactic(state, state.activeClubId, key, value);
+    if (!result.ok) {
+      toast(result.message, "bad");
+      render();
+      return;
+    }
+    const group = (Data.TACTIC_GROUPS || []).find((item) => item.key === key);
+    ui.liveTactics = { ...liveTacticsForMatch(ui.liveMatch), [key]: value };
+    recordTouchlineOrder(group ? group.label : "Tactic", tacticLabel(key, value));
+    Storage.save(state);
+    renderMatchTick();
+  }
+
+  function applyLiveTacticalPreset(presetKey) {
+    if (!ui.liveMatch || !ui.commentaryPlaying) return;
+    const result = Engine.applyTacticalPreset(state, state.activeClubId, presetKey);
+    if (!result.ok) {
+      toast(result.message, "bad");
+      render();
+      return;
+    }
+    ui.liveTactics = result.tactics;
+    recordTouchlineOrder(result.label, "Preset applied");
+    Storage.save(state);
+    renderMatchTick();
+  }
+
+  function recordTouchlineOrder(title, detail) {
+    const commentary = ui.liveMatch ? (ui.liveMatch.commentary || []).slice(0, ui.commentaryCount) : [];
+    const minute = ui.liveMatch ? liveMatchMinute(ui.liveMatch, commentary) : 0;
+    ui.liveOrders.unshift({
+      minute,
+      title,
+      detail
+    });
+    ui.liveOrders = ui.liveOrders.slice(0, 8);
+  }
+
   function simulateRound() {
     if (ui.commentaryPlaying) return;
     const result = Engine.simulateUntilNextEvent(state, { maxDays: 28 });
@@ -3566,6 +3801,9 @@
     }
     ui.screen = "match";
     ui.liveMatch = result.activeMatch;
+    ui.liveTactics = null;
+    ui.liveTactics = liveTacticsForMatch(result.activeMatch);
+    ui.liveOrders = [];
     ui.commentaryCount = 0;
     ui.commentaryPlaying = true;
     render();
