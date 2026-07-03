@@ -208,6 +208,28 @@ function run() {
   const autoPlan = Engine.autoSetTactics(save, activeClub.id);
   assert.equal(autoPlan.ok, true, "Auto match plan should generate tactics");
   assert.ok(activeClub.tactics.focus, "Auto match plan should keep a valid attacking focus");
+  const opposition = Engine.oppositionReport(save, activeClub.id);
+  assert.ok(opposition, "Opposition reports should be available before the next fixture");
+  assert.ok(opposition.opponentName, "Opposition reports should identify the next opponent");
+  assert.ok(opposition.confidence >= 1 && opposition.confidence <= 100, "Opposition report confidence should be bounded");
+  assert.ok(opposition.style.tags.length > 0, "Opposition reports should include style tags");
+  assert.ok(opposition.dangerPlayers.length > 0, "Opposition reports should identify danger players");
+  assert.ok(opposition.strengths.length > 0 && opposition.weaknesses.length > 0, "Opposition reports should include strengths and weaknesses");
+  assert.ok(Engine.MATCH_PREP[opposition.recommendedMatchPrep], "Opposition reports should recommend a valid match prep");
+  assert.ok(Engine.TRAINING_PLANS[opposition.recommendedTrainingPlan], "Opposition reports should recommend a valid training plan");
+  assert.ok(Engine.TACTICAL_PRESETS[opposition.recommendedPreset], "Opposition reports should recommend a valid tactical preset");
+  assert.ok(opposition.instructionPlan.length > 0, "Opposition reports should recommend player instructions");
+  const inboxBeforeOppositionPrep = save.inbox.length;
+  const oppositionPrep = Engine.applyOppositionPrep(save, activeClub.id);
+  assert.equal(oppositionPrep.ok, true, "Opposition prep should apply report recommendations");
+  assert.equal(activeClub.trainingPlan, opposition.recommendedTrainingPlan, "Opposition prep should set the recommended training plan");
+  assert.equal(activeClub.matchPrep, opposition.recommendedMatchPrep, "Opposition prep should set the recommended match prep");
+  assert.equal(activeClub.tactics.mentality, Engine.TACTICAL_PRESETS[opposition.recommendedPreset].tactics.mentality, "Opposition prep should apply the recommended tactical preset");
+  assert.ok(oppositionPrep.appliedInstructions.length > 0, "Opposition prep should apply player instructions");
+  oppositionPrep.appliedInstructions.forEach((item) => {
+    assert.equal(activeClub.playerInstructions[String(item.slotIndex)], item.instructionKey, "Opposition prep instructions should persist by slot");
+  });
+  assert.ok(save.inbox.length > inboxBeforeOppositionPrep, "Opposition prep should create an inbox note");
 
   const injuredStarter = Engine.getPlayer(save, activeClub.lineup[0]);
   injuredStarter.injury = {

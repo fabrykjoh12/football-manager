@@ -339,6 +339,7 @@
     const table = Engine.calculateTable(state);
     const leaders = Engine.calculateLeaders(state);
     const next = Engine.getNextFixture(state, club.id);
+    const opposition = next ? Engine.oppositionReport(state, club.id, next) : null;
     const board = Engine.boardReport(state);
     const cup = Engine.domesticCupReport(state);
     const europe = Engine.europeanReport(state);
@@ -370,6 +371,7 @@
         </div>
       </div>
       ${renderActionQueue()}
+      ${opposition ? renderOppositionReport(opposition, { title: "Opposition Report", compact: true }) : ""}
       <div class="dashboard-command section-gap">
         <div class="next-match-card">
           <div class="eyebrow">Next Match</div>
@@ -686,6 +688,7 @@
     const opponent = opponentId ? Engine.getClub(state, opponentId) : null;
     const profile = Engine.tacticalProfile(club);
     const opponentProfile = opponent ? Engine.tacticalProfile(opponent) : null;
+    const opposition = next ? Engine.oppositionReport(state, club.id, next) : null;
     const strength = Engine.teamStrength(state, club.id);
     const roleReport = Engine.tacticalRoleReport(state, club.id);
 
@@ -724,7 +727,7 @@
         </div>
         <div class="panel">
           <h2 class="panel-title">Next Opposition</h2>
-          ${next && opponent ? renderTacticalPreview(club, opponent, profile, opponentProfile, next) : `<div class="empty-state">No upcoming fixture.</div>`}
+          ${next && opponent ? `${renderTacticalPreview(club, opponent, profile, opponentProfile, next)}${opposition ? renderOppositionReport(opposition, { title: "Scout Report", compact: true, embedded: true }) : ""}` : `<div class="empty-state">No upcoming fixture.</div>`}
         </div>
         <div class="panel tactical-roles-panel">
           <div class="ratings-heading">
@@ -815,6 +818,7 @@
     const report = club.trainingReport;
     const familiarity = club.matchPrepFamiliarity || {};
     const activePrep = club.matchPrep || "balanced";
+    const opposition = next ? Engine.oppositionReport(state, club.id, next) : null;
     const squad = Engine.clubPlayers(state, club.id);
     const avgFitness = round(avg(squad.map((player) => player.fitness)), 1);
     const avgSharpness = round(avg(squad.map((player) => player.sharpness)), 1);
@@ -865,6 +869,10 @@
               </div>
             `).join("")}
           </div>
+        </div>
+        <div class="panel">
+          <h2 class="panel-title">Opponent Prep</h2>
+          ${opposition ? renderOppositionReport(opposition, { title: "Opponent Prep", compact: true, embedded: true }) : `<div class="empty-state">No upcoming opponent report.</div>`}
         </div>
         <div class="panel training-calendar-panel">
           <h2 class="panel-title">Training Calendar</h2>
@@ -1292,6 +1300,105 @@
     `;
   }
 
+  function renderOppositionReport(report, options = {}) {
+    if (!report) return `<div class="empty-state">No opposition report available.</div>`;
+    const title = options.title || "Opposition Report";
+    const classes = [
+      "opposition-report",
+      options.compact ? "compact" : "",
+      options.embedded ? "embedded" : "section-gap"
+    ].filter(Boolean).join(" ");
+    const danger = report.dangerPlayers || [];
+    const keyPlans = report.keyPlayerPlans || [];
+    const instructions = report.instructionPlan || [];
+    const styleTags = report.style && report.style.tags ? report.style.tags : [];
+    const tendencies = report.style && report.style.tendencies ? report.style.tendencies : [];
+    const pressurePoints = report.style && report.style.pressurePoints ? report.style.pressurePoints : [];
+    return `
+      <div class="${classes}">
+        <div class="opposition-head">
+          <div>
+            <div class="eyebrow">${escapeHtml(report.fixture.competitionName || "Next match")} | ${escapeHtml(report.venue)}${report.daysToMatch !== null ? ` | ${report.daysToMatch} day${report.daysToMatch === 1 ? "" : "s"}` : ""}</div>
+            <h2 class="panel-title">${escapeHtml(title)}: ${escapeHtml(report.opponentName)}</h2>
+            <p>${escapeHtml(report.opponentFormation)} shape, ${escapeHtml(report.style.summary)}. Tactical edge ${report.tacticalEdge > 0 ? "+" : ""}${escapeHtml(String(report.tacticalEdge))}.</p>
+          </div>
+          <div class="opposition-actions">
+            <span class="pill ${escapeAttr(report.confidenceTone)}">${escapeHtml(report.confidenceLabel)} ${report.confidence}%</span>
+            <button class="btn-primary" data-action="apply-opposition-prep" type="button">Apply Prep</button>
+          </div>
+        </div>
+
+        <div class="opposition-metrics">
+          <div><span>Training</span><strong>${escapeHtml(report.recommendedTrainingPlanLabel)}</strong></div>
+          <div><span>Match Prep</span><strong>${escapeHtml(report.recommendedMatchPrepLabel)}</strong></div>
+          <div><span>Preset</span><strong>${escapeHtml(report.recommendedPresetLabel)}</strong></div>
+          <div><span>Coverage</span><strong>${report.scoutingCoverage}%</strong></div>
+        </div>
+
+        <div class="opposition-tags">
+          ${styleTags.map((tag) => `<span class="badge ${escapeAttr(tag.tone)}">${escapeHtml(tag.label)}</span>`).join("")}
+        </div>
+
+        <div class="opposition-grid">
+          <div class="opposition-block">
+            <h3>Danger Players</h3>
+            ${danger.length ? danger.slice(0, 3).map((item) => {
+              const player = Engine.getPlayer(state, item.playerId);
+              return `
+                <div class="opposition-row">
+                  <span>${player ? playerNameButton(player, "name-link") : escapeHtml(item.name)}<small>${positionBadge(item.position)} ${escapeHtml(item.reason)}</small></span>
+                  <strong>${Math.round(item.threatScore)}</strong>
+                </div>
+              `;
+            }).join("") : `<div class="empty-state">No standout threats identified.</div>`}
+          </div>
+
+          <div class="opposition-block">
+            <h3>Strengths</h3>
+            ${(report.strengths || []).map((item) => `
+              <div class="opposition-row">
+                <span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></span>
+                <em class="badge ${escapeAttr(item.tone)}">${escapeHtml(String(item.score))}</em>
+              </div>
+            `).join("")}
+          </div>
+
+          <div class="opposition-block">
+            <h3>Weaknesses</h3>
+            ${(report.weaknesses || []).map((item) => `
+              <div class="opposition-row">
+                <span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></span>
+                <em class="badge ${escapeAttr(item.tone)}">${escapeHtml(String(item.score))}</em>
+              </div>
+            `).join("")}
+          </div>
+
+          <div class="opposition-block">
+            <h3>Match Plan</h3>
+            ${instructions.length ? instructions.map((item) => {
+              const player = item.playerId ? Engine.getPlayer(state, item.playerId) : null;
+              return `
+                <div class="opposition-row instruction">
+                  <span>${player ? playerNameButton(player, "name-link") : escapeHtml(item.playerName)}<small>${positionBadge(item.position)} ${escapeHtml(item.reason)}</small></span>
+                  <strong>${escapeHtml(item.instructionLabel)}</strong>
+                </div>
+              `;
+            }).join("") : `<div class="empty-state">No instruction changes recommended.</div>`}
+          </div>
+        </div>
+
+        <div class="opposition-notes">
+          ${tendencies.slice(0, 2).map((text) => `<div class="message"><strong>Tendency</strong><br>${escapeHtml(text)}</div>`).join("")}
+          ${pressurePoints.slice(0, 2).map((text) => `<div class="message warn"><strong>Pressure Point</strong><br>${escapeHtml(text)}</div>`).join("")}
+          ${keyPlans.slice(0, 2).map((item) => {
+            const player = Engine.getPlayer(state, item.playerId);
+            return `<div class="message"><strong>${player ? escapeHtml(displayPlayerName(player)) : escapeHtml(item.name)}</strong><br>${escapeHtml(item.plan)}</div>`;
+          }).join("")}
+        </div>
+      </div>
+    `;
+  }
+
   function renderMatchDay() {
     const club = activeClub();
     const next = Engine.getNextFixture(state, club.id);
@@ -1304,10 +1411,12 @@
     const commentary = ui.liveMatch ? (ui.liveMatch.commentary || []).slice(0, ui.commentaryCount) : match ? (match.commentary || []) : [];
     const minute = match ? liveMatchMinute(match, commentary) : 0;
     const visibleGoals = match ? visibleMatchGoals(match, commentary, minute) : [];
+    const opposition = next ? Engine.oppositionReport(state, club.id, next) : null;
 
     return `
       ${match ? renderLiveMatchCentre(match, minute, visibleGoals) : ""}
       ${match ? renderMatchdayManagement(match, minute, visibleGoals) : ""}
+      ${!ui.liveMatch && opposition ? renderOppositionReport(opposition, { title: "Pre-Match Scout Report", compact: true }) : ""}
       <div class="grid two">
         <div class="panel">
           <h2 class="panel-title">Round ${roundData ? roundData.number : state.league.currentRound}${roundData && roundData.date ? ` | ${escapeHtml(Engine.formatGameDate(roundData.date))}` : ""}</h2>
@@ -3380,6 +3489,13 @@
     }
     if (action === "apply-tactical-preset") {
       const result = Engine.applyTacticalPreset(state, state.activeClubId, actionEl.dataset.presetKey);
+      Storage.save(state);
+      toast(result.message, result.ok ? "good" : "bad");
+      render();
+      return;
+    }
+    if (action === "apply-opposition-prep") {
+      const result = Engine.applyOppositionPrep(state, state.activeClubId);
       Storage.save(state);
       toast(result.message, result.ok ? "good" : "bad");
       render();

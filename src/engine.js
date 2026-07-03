@@ -4098,6 +4098,446 @@
     return { ok: true, message: "Match plan updated." };
   }
 
+  function oppositionFixtureContext(state, clubId, fixture) {
+    const next = fixture || getNextFixture(state, clubId);
+    if (!next) return null;
+    const opponentId = next.homeClubId === clubId ? next.awayClubId : next.homeClubId;
+    const opponent = getClub(state, opponentId);
+    if (!opponent) return null;
+    return {
+      fixture: next,
+      opponentId,
+      opponent,
+      venue: next.homeClubId === clubId ? "Home" : "Away"
+    };
+  }
+
+  function squadAttributeAverage(players, attributes) {
+    const values = [];
+    (players || []).forEach((player) => {
+      attributes.forEach((attribute) => {
+        const value = player.attributes && Number(player.attributes[attribute]);
+        if (Number.isFinite(value)) values.push(value);
+      });
+    });
+    return values.length ? average(values) : 50;
+  }
+
+  function playerThreatScore(player) {
+    if (!player) return 0;
+    const stats = player.seasonStats || freshPlayerStats();
+    const rating = averageRating(stats);
+    const attributes = player.attributes || {};
+    const position = player.position;
+    let attributeScore = player.currentAbility || 55;
+    if (position === "ST") attributeScore = average([attributes.finishing || 50, attributes.composure || 50, attributes.offTheBall || 50, attributes.pace || 50]);
+    else if (["RW", "LW"].includes(position)) attributeScore = average([attributes.pace || 50, attributes.dribbling || 50, attributes.crossing || 50, attributes.offTheBall || 50]);
+    else if (["AM", "CM"].includes(position)) attributeScore = average([attributes.passing || 50, attributes.vision || 50, attributes.technique || 50, attributes.decisions || 50]);
+    else if (position === "DM") attributeScore = average([attributes.tackling || 50, attributes.positioning || 50, attributes.passing || 50, attributes.strength || 50]);
+    else if (["RB", "LB"].includes(position)) attributeScore = average([attributes.pace || 50, attributes.stamina || 50, attributes.crossing || 50, attributes.tackling || 50]);
+    else if (position === "CB") attributeScore = average([attributes.heading || 50, attributes.jumping || 50, attributes.strength || 50, attributes.tackling || 50]);
+    else if (position === "GK") attributeScore = average([attributes.reflexes || 50, attributes.handling || 50, attributes.positioning || 50, attributes.concentration || 50]);
+    const output = (stats.goals || 0) * 2.8 + (stats.assists || 0) * 2.3 + (rating ? (rating - 6.4) * 7 : 0);
+    const form = average((player.form || []).slice(-5));
+    return round((player.currentAbility || 55) * 0.55 + attributeScore * 0.36 + output + (form ? (form - 6.5) * 3 : 0), 1);
+  }
+
+  function playerThreatReason(player) {
+    if (!player) return "Key contributor";
+    const attributes = player.attributes || {};
+    if (player.position === "ST") return (player.seasonStats && player.seasonStats.goals >= 3) || attributes.finishing >= 78 ? "Box finisher" : "Runs behind";
+    if (["RW", "LW"].includes(player.position)) return attributes.pace >= 78 ? "Wide pace" : attributes.crossing >= 76 ? "Crossing supply" : "1v1 carrier";
+    if (player.position === "AM") return attributes.vision >= 76 ? "Between-lines creator" : "Final-third connector";
+    if (player.position === "CM") return attributes.passing >= 77 ? "Tempo setter" : "Second-ball engine";
+    if (player.position === "DM") return attributes.tackling >= 76 ? "Counter-press anchor" : "Build-up outlet";
+    if (["RB", "LB"].includes(player.position)) return attributes.crossing >= 75 ? "Overlap threat" : "Touchline runner";
+    if (player.position === "CB") return attributes.heading >= 77 ? "Set-piece target" : "Duel defender";
+    if (player.position === "GK") return attributes.reflexes >= 78 ? "Shot stopper" : "Box control";
+    return "Key contributor";
+  }
+
+  function oppositionDangerPlayers(state, opponent) {
+    const lineupIds = ensureLineup(state, opponent.id);
+    const lineupPlayers = lineupIds.map((id) => getPlayer(state, id)).filter(Boolean);
+    const pool = lineupPlayers.length ? lineupPlayers : clubPlayers(state, opponent.id);
+    return pool
+      .map((player) => ({
+        playerId: player.id,
+        name: playerDisplayName(player),
+        fullName: player.name,
+        position: player.position,
+        age: player.age,
+        ability: player.currentAbility,
+        potential: player.potential,
+        goals: player.seasonStats ? player.seasonStats.goals || 0 : 0,
+        assists: player.seasonStats ? player.seasonStats.assists || 0 : 0,
+        averageRating: round(averageRating(player.seasonStats || freshPlayerStats()), 2),
+        threatScore: playerThreatScore(player),
+        reason: playerThreatReason(player)
+      }))
+      .sort((a, b) => b.threatScore - a.threatScore)
+      .slice(0, 5);
+  }
+
+  function oppositionStyleReport(state, opponent, strength, profile, players) {
+    const tactics = normalizeTactics(opponent.tactics);
+    const attackers = players.filter((player) => ["ST", "LW", "RW", "AM"].includes(player.position));
+    const widePlayers = players.filter((player) => ["RB", "LB", "RW", "LW"].includes(player.position));
+    const midfielders = players.filter((player) => ["DM", "CM", "AM"].includes(player.position));
+    const aerial = squadAttributeAverage(players, ["heading", "jumping", "strength"]);
+    const pace = squadAttributeAverage(players, ["pace", "acceleration"]);
+    const creativity = squadAttributeAverage(midfielders.length ? midfielders : players, ["passing", "vision", "technique"]);
+    const wideThreat = squadAttributeAverage(widePlayers.length ? widePlayers : players, ["pace", "crossing", "dribbling"]);
+    const finishing = squadAttributeAverage(attackers.length ? attackers : players, ["finishing", "composure", "offTheBall"]);
+    const tags = [];
+    const tendencies = [];
+    const pressurePoints = [];
+
+    if (["high", "relentless"].includes(tactics.pressing) || profile.pressure >= 1.2) {
+      tags.push({ key: "highPress", label: "High press", tone: "amber" });
+      tendencies.push("Jumps to press after loose first touches and backward passes.");
+      pressurePoints.push("Use secure build-up outlets and avoid slow central turnovers.");
+    }
+    if (tactics.focus === "flanks" || tactics.width === "wide" || wideThreat >= creativity + 4) {
+      tags.push({ key: "wideService", label: "Wide service", tone: "blue" });
+      tendencies.push("Looks for early wide overloads and cutbacks from the touchline.");
+      pressurePoints.push("Keep full backs connected and stop free crosses.");
+    }
+    if (tactics.focus === "central" || tactics.width === "narrow" || creativity >= wideThreat + 5) {
+      tags.push({ key: "centralCreation", label: "Central creation", tone: "blue" });
+      tendencies.push("Builds through central combinations and third-man runs.");
+      pressurePoints.push("Press the creator before they face forward.");
+    }
+    if (tactics.focus === "counter" || tactics.line === "deep" || tactics.tempo === "direct" && pace >= 72) {
+      tags.push({ key: "counterThreat", label: "Counter threat", tone: "red" });
+      tendencies.push("Protects space, then releases runners quickly after regains.");
+      pressurePoints.push("Hold rest defense and keep at least one midfielder behind the ball.");
+    }
+    if (tactics.focus === "setPieces" || aerial >= 74) {
+      tags.push({ key: "setPieces", label: "Set pieces", tone: "amber" });
+      tendencies.push("Targets aerial mismatches from corners and wide free kicks.");
+      pressurePoints.push("Prioritise blockers, second balls, and the near-post lane.");
+    }
+    if (profile.possession >= 2.5 || tactics.tempo === "patient") {
+      tags.push({ key: "possession", label: "Possession", tone: "green" });
+      tendencies.push("Accepts longer spells on the ball to move the block side to side.");
+      pressurePoints.push("Choose pressing traps instead of chasing every pass.");
+    }
+    if (!tags.length) {
+      tags.push({ key: "balanced", label: "Balanced", tone: "green" });
+      tendencies.push("Plays a balanced structure without one obvious attacking lane.");
+      pressurePoints.push("Win the midfield duels and force them into lower-quality shots.");
+    }
+
+    const summary = tags.slice(0, 2).map((tag) => tag.label).join(" + ");
+    return {
+      summary,
+      tags: tags.slice(0, 4),
+      tendencies: uniqueIds(tendencies).slice(0, 4),
+      pressurePoints: uniqueIds(pressurePoints).slice(0, 4),
+      attributes: {
+        aerial: round(aerial, 1),
+        pace: round(pace, 1),
+        creativity: round(creativity, 1),
+        wideThreat: round(wideThreat, 1),
+        finishing: round(finishing, 1)
+      },
+      tactics
+    };
+  }
+
+  function oppositionStrengthsAndWeaknesses(ownStrength, opponentStrength, profile, style) {
+    const strengthRows = [
+      { key: "attack", label: "Attack", score: opponentStrength.attack, detail: "Quality in chance creation and finishing." },
+      { key: "midfield", label: "Midfield", score: opponentStrength.midfield, detail: "Control of second balls and central territory." },
+      { key: "defense", label: "Defensive Unit", score: opponentStrength.defense, detail: "Box protection and duel security." },
+      { key: "keeper", label: "Goalkeeper", score: opponentStrength.keeper, detail: "Shot stopping and box control." },
+      { key: "press", label: "Pressing", score: 50 + profile.pressure * 12 + profile.intensity * 0.18, detail: "Ability to force rushed decisions." },
+      { key: "setPieces", label: "Set Plays", score: 50 + profile.corners * 7 + style.attributes.aerial * 0.28, detail: "Aerial targets and dead-ball pressure." },
+      { key: "pace", label: "Transition Pace", score: style.attributes.pace, detail: "Speed into open grass after regains." }
+    ].map((row) => ({ ...row, score: round(clamp(row.score, 1, 100), 1) }));
+    const strengths = strengthRows
+      .slice()
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map((row) => ({ ...row, tone: row.score >= 76 ? "red" : row.score >= 68 ? "amber" : "blue" }));
+    const weaknessRows = [
+      { key: "defense", label: "Defensive Space", score: 100 - opponentStrength.defense, detail: "Can be attacked if runners arrive between defenders." },
+      { key: "keeper", label: "Keeper Pressure", score: 100 - opponentStrength.keeper, detail: "Shots and crosses can make the goalkeeper work." },
+      { key: "buildUp", label: "Build-Up Security", score: 50 - profile.passAccuracy * 4 + Math.max(0, profile.pressure) * 4, detail: "Their passing stability drops when the press lands." },
+      { key: "line", label: "Space Behind", score: profile.tactics.line === "high" ? 76 : 100 - style.attributes.pace, detail: "Runs behind can stretch the defensive line." },
+      { key: "load", label: "Late Legs", score: profile.intensity > 68 ? profile.intensity : 100 - profile.intensity, detail: "High load can open late-match gaps." },
+      { key: "relative", label: "Quality Gap", score: Math.max(0, ownStrength.overall - opponentStrength.overall + 50), detail: "Your squad quality can tilt the game with the right plan." }
+    ].map((row) => ({ ...row, score: round(clamp(row.score, 1, 100), 1) }));
+    const weaknesses = weaknessRows
+      .slice()
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map((row) => ({ ...row, tone: row.score >= 70 ? "green" : row.score >= 56 ? "blue" : "amber" }));
+    return { strengths, weaknesses };
+  }
+
+  function oppositionConfidence(state, clubId, opponentPlayers, fixture) {
+    ensureScoutingState(state);
+    ensureCalendar(state);
+    const staff = staffEffectsForClub(state, clubId);
+    const analysisLevel = staffDepartmentLevel(state, clubId, "analysis");
+    const scoutingLevel = staffDepartmentLevel(state, clubId, "scouting");
+    const ids = opponentPlayers.map((player) => player.id);
+    const reports = ids.map((id) => state.scouting.reports[id]).filter(Boolean);
+    const coverage = ids.length ? reports.length / ids.length : 0;
+    const avgReportConfidence = reports.length ? average(reports.map((report) => report.confidence || 0)) : 0;
+    const activeAssignmentBoost = (state.scouting.assignments || []).filter((assignment) => assignment.status === "active" && ids.includes(assignment.playerId)).length * 3;
+    const daysToMatch = fixture && fixture.date ? Math.max(0, daysBetween(state.calendar.currentDate, fixture.date)) : 7;
+    const proximity = daysToMatch <= 7 ? 5 : daysToMatch <= 14 ? 3 : 1;
+    const value = 24 +
+      analysisLevel * 5 +
+      scoutingLevel * 4 +
+      staff.scoutingConfidenceBonus +
+      staff.assistantInsight * 0.45 +
+      coverage * 22 +
+      avgReportConfidence * 0.24 +
+      activeAssignmentBoost +
+      proximity;
+    const confidence = Math.round(clamp(value, 24, 96));
+    return {
+      confidence,
+      label: confidence >= 78 ? "Detailed" : confidence >= 58 ? "Reliable" : confidence >= 42 ? "Partial" : "Low",
+      tone: confidence >= 78 ? "green" : confidence >= 58 ? "blue" : confidence >= 42 ? "amber" : "red",
+      coverage: Math.round(coverage * 100),
+      reports: reports.length,
+      averageReportConfidence: Math.round(avgReportConfidence)
+    };
+  }
+
+  function recommendedMatchPrepForOpposition(ownStrength, opponentStrength, style) {
+    const tagKeys = new Set(style.tags.map((tag) => tag.key));
+    if (tagKeys.has("setPieces")) return "setPieces";
+    if (opponentStrength.attack > ownStrength.defense + 4 || tagKeys.has("counterThreat") && opponentStrength.attack >= ownStrength.defense) return "defensiveShape";
+    if (tagKeys.has("highPress") || tagKeys.has("possession")) return "pressingTraps";
+    if (ownStrength.attack > opponentStrength.defense + 4) return "attackingPatterns";
+    if (tagKeys.has("wideService") && style.attributes.aerial >= 71) return "setPieces";
+    return "balanced";
+  }
+
+  function recommendedPresetForOpposition(ownStrength, opponentStrength, style, venue) {
+    const tagKeys = new Set(style.tags.map((tag) => tag.key));
+    const diff = ownStrength.overall - opponentStrength.overall;
+    if (diff <= -7 || venue === "Away" && diff <= -3 && tagKeys.has("counterThreat")) return "counterAway";
+    if (tagKeys.has("possession") || tagKeys.has("highPress")) return diff >= -4 ? "control" : "counterAway";
+    if (tagKeys.has("wideService") || style.attributes.wideThreat > style.attributes.creativity + 4) return "wideService";
+    if (diff >= 8) return "highPress";
+    if (diff <= -4) return "protectLead";
+    return "balanced";
+  }
+
+  function recommendedTrainingPlanForOpposition(state, clubId, prep, daysToMatch) {
+    const squad = clubPlayers(state, clubId);
+    const avgFitness = average(squad.map((player) => player.fitness || 75));
+    const injuries = squad.filter((player) => isInjured(state, player)).length;
+    if (avgFitness < 68 || injuries >= 3 || daysToMatch !== null && daysToMatch <= 2) return "recovery";
+    if (prep === "defensiveShape") return "defensive";
+    if (prep === "attackingPatterns") return "attacking";
+    if (prep === "pressingTraps") return avgFitness >= 82 && daysToMatch !== null && daysToMatch >= 5 ? "physical" : "tactical";
+    if (prep === "setPieces") return "tactical";
+    return "balanced";
+  }
+
+  function keyPlayerPlansForOpposition(dangerPlayers) {
+    return dangerPlayers.slice(0, 3).map((player) => {
+      let plan = "Deny rhythm and make their first touch face away from goal.";
+      if (player.position === "ST") plan = "Keep a centre back touch-tight and protect the space behind.";
+      else if (["RW", "LW"].includes(player.position)) plan = "Double up near the touchline and block early crossing lanes.";
+      else if (["AM", "CM"].includes(player.position)) plan = "Press before they turn and screen passes into the half-space.";
+      else if (player.position === "DM") plan = "Force play around them and press their first forward pass.";
+      else if (["RB", "LB"].includes(player.position)) plan = "Track overlaps and make them defend long recovery runs.";
+      else if (player.position === "CB") plan = "Pin them during build-up and match them tightly on set pieces.";
+      else if (player.position === "GK") plan = "Crowd the six-yard box and test handling with early shots.";
+      return {
+        playerId: player.playerId,
+        name: player.name,
+        position: player.position,
+        reason: player.reason,
+        plan
+      };
+    });
+  }
+
+  function addInstructionRecommendation(recommendations, slots, positions, instructionKey, reason, priority) {
+    const existingSlots = new Set(recommendations.map((item) => item.slotIndex));
+    const candidates = slots
+      .filter((slot) => positions.includes(slot.position) && !existingSlots.has(slot.slotIndex) && isInstructionValidForPosition(instructionKey, slot.position))
+      .sort((a, b) => (b.player ? playerThreatScore(b.player) : 0) - (a.player ? playerThreatScore(a.player) : 0));
+    const candidate = candidates[0];
+    if (!candidate) return;
+    recommendations.push({
+      slotIndex: candidate.slotIndex,
+      position: candidate.position,
+      playerId: candidate.player ? candidate.player.id : null,
+      playerName: candidate.player ? playerDisplayName(candidate.player) : `Slot ${candidate.slotIndex + 1}`,
+      instructionKey,
+      instructionLabel: playerInstructionLabel(instructionKey),
+      reason,
+      priority: priority || 5
+    });
+  }
+
+  function instructionPlanForOpposition(state, club, reportContext) {
+    const formation = Data.FORMATIONS[club.formation] || Data.FORMATIONS["4-3-3"];
+    normalizePlayerInstructions(club);
+    const slots = formation.map((position, slotIndex) => ({
+      slotIndex,
+      position,
+      player: getPlayer(state, (club.lineup || [])[slotIndex]),
+      currentInstruction: club.playerInstructions[String(slotIndex)] || "balanced"
+    }));
+    const tagKeys = new Set(reportContext.style.tags.map((tag) => tag.key));
+    const plan = [];
+    if (tagKeys.has("counterThreat")) {
+      addInstructionRecommendation(plan, slots, ["CB", "DM"], "stayBack", "Protect depth against counter-attacks.", 9);
+      addInstructionRecommendation(plan, slots, ["RB", "LB"], "stayBack", "Keep the rest defense connected.", 8);
+    }
+    if (tagKeys.has("wideService")) {
+      addInstructionRecommendation(plan, slots, ["RB", "LB"], "holdWidth", "Stop wide overloads before the cross.", 8);
+      addInstructionRecommendation(plan, slots, ["RW", "LW"], "pressMore", "Help the full back close touchline receivers.", 7);
+    }
+    if (tagKeys.has("centralCreation")) {
+      addInstructionRecommendation(plan, slots, ["DM", "CM"], "pressMore", "Jump onto central creators before they turn.", 8);
+      addInstructionRecommendation(plan, slots, ["CM", "AM"], "stayBack", "Keep one central player behind attacks.", 6);
+    }
+    if (tagKeys.has("highPress")) {
+      addInstructionRecommendation(plan, slots, ["CB", "DM", "CM"], "takeMoreRisks", "Play through pressure before the press locks on.", 7);
+      addInstructionRecommendation(plan, slots, ["RW", "LW"], "holdWidth", "Give the build-up an outside outlet.", 6);
+    }
+    if (tagKeys.has("setPieces")) {
+      addInstructionRecommendation(plan, slots, ["CB", "DM"], "stayBack", "Keep aerial protection and second-ball cover.", 7);
+    }
+    if (reportContext.ownStrength.overall >= reportContext.opponentStrength.overall + 6) {
+      addInstructionRecommendation(plan, slots, ["AM", "RW", "LW", "ST"], "getForward", "Use the quality edge with more penalty-area runners.", 5);
+    } else if (reportContext.opponentStrength.overall >= reportContext.ownStrength.overall + 6) {
+      addInstructionRecommendation(plan, slots, ["DM", "CM"], "stayBack", "Keep the game compact against the stronger side.", 7);
+    }
+    if (!plan.length) {
+      addInstructionRecommendation(plan, slots, ["DM", "CM", "AM"], "pressMore", "Create a controlled pressure trigger in midfield.", 5);
+    }
+    return plan
+      .sort((a, b) => b.priority - a.priority)
+      .slice(0, 5)
+      .map(({ priority, ...item }) => item);
+  }
+
+  function oppositionReport(state, clubId, fixture) {
+    const club = getClub(state, clubId);
+    const context = oppositionFixtureContext(state, clubId, fixture);
+    if (!club || !context) return null;
+    ensureCalendar(state);
+    normalizeTrainingSetup(club);
+    normalizeTrainingSetup(context.opponent);
+    const opponentLineup = ensureLineup(state, context.opponentId).map((id) => getPlayer(state, id)).filter(Boolean);
+    const opponentStrength = teamStrength(state, context.opponentId);
+    const ownStrength = teamStrength(state, clubId);
+    const opponentProfile = tacticalProfile(context.opponent);
+    const ownProfile = tacticalProfile(club);
+    const style = oppositionStyleReport(state, context.opponent, opponentStrength, opponentProfile, opponentLineup);
+    const dangerPlayers = oppositionDangerPlayers(state, context.opponent);
+    const strengthReport = oppositionStrengthsAndWeaknesses(ownStrength, opponentStrength, opponentProfile, style);
+    const daysToMatch = context.fixture.date ? Math.max(0, daysBetween(state.calendar.currentDate, context.fixture.date)) : null;
+    const confidence = oppositionConfidence(state, clubId, opponentLineup, context.fixture);
+    const recommendedMatchPrep = recommendedMatchPrepForOpposition(ownStrength, opponentStrength, style);
+    const recommendedPreset = recommendedPresetForOpposition(ownStrength, opponentStrength, style, context.venue);
+    const recommendedTrainingPlan = recommendedTrainingPlanForOpposition(state, clubId, recommendedMatchPrep, daysToMatch);
+    const instructionPlan = instructionPlanForOpposition(state, club, { style, ownStrength, opponentStrength });
+    const tacticalEdge = round(ownStrength.overall - opponentStrength.overall, 1);
+    return {
+      fixtureId: context.fixture.id,
+      fixture: {
+        id: context.fixture.id,
+        date: context.fixture.date || null,
+        round: context.fixture.round || null,
+        roundName: context.fixture.roundName || null,
+        competitionName: context.fixture.competitionName || state.league.name,
+        homeClubId: context.fixture.homeClubId,
+        awayClubId: context.fixture.awayClubId
+      },
+      opponentId: context.opponentId,
+      opponentName: context.opponent.name,
+      opponentShortName: context.opponent.shortName || context.opponent.name,
+      opponentFormation: context.opponent.formation || "-",
+      venue: context.venue,
+      daysToMatch,
+      confidence: confidence.confidence,
+      confidenceLabel: confidence.label,
+      confidenceTone: confidence.tone,
+      scoutingCoverage: confidence.coverage,
+      scoutingReports: confidence.reports,
+      averageReportConfidence: confidence.averageReportConfidence,
+      style,
+      dangerPlayers,
+      keyPlayerPlans: keyPlayerPlansForOpposition(dangerPlayers),
+      strengths: strengthReport.strengths,
+      weaknesses: strengthReport.weaknesses,
+      recommendedMatchPrep,
+      recommendedMatchPrepLabel: matchPrepLabel(recommendedMatchPrep),
+      recommendedPreset,
+      recommendedPresetLabel: tacticalPresetLabel(recommendedPreset),
+      recommendedTrainingPlan,
+      recommendedTrainingPlanLabel: trainingPlanLabel(recommendedTrainingPlan),
+      instructionPlan,
+      tacticalEdge,
+      strength: {
+        own: {
+          attack: round(ownStrength.attack, 1),
+          midfield: round(ownStrength.midfield, 1),
+          defense: round(ownStrength.defense, 1),
+          keeper: round(ownStrength.keeper, 1),
+          overall: round(ownStrength.overall, 1)
+        },
+        opponent: {
+          attack: round(opponentStrength.attack, 1),
+          midfield: round(opponentStrength.midfield, 1),
+          defense: round(opponentStrength.defense, 1),
+          keeper: round(opponentStrength.keeper, 1),
+          overall: round(opponentStrength.overall, 1)
+        }
+      },
+      tacticalSummary: {
+        opponentIntensity: opponentProfile.intensity,
+        ownIntensity: ownProfile.intensity,
+        controlBias: round(ownProfile.possession - opponentProfile.possession, 1),
+        pressureBias: round(ownProfile.pressure - opponentProfile.pressure, 1)
+      }
+    };
+  }
+
+  function applyOppositionPrep(state, clubId) {
+    const club = getClub(state, clubId);
+    const report = oppositionReport(state, clubId);
+    if (!club || !report) return { ok: false, message: "No upcoming opponent to prepare for." };
+    const changes = [];
+    const training = setTrainingPlan(state, clubId, report.recommendedTrainingPlan);
+    if (training.ok) changes.push(report.recommendedTrainingPlanLabel);
+    const prep = setMatchPrep(state, clubId, report.recommendedMatchPrep);
+    if (prep.ok) changes.push(report.recommendedMatchPrepLabel);
+    const preset = applyTacticalPreset(state, clubId, report.recommendedPreset);
+    if (preset.ok) changes.push(report.recommendedPresetLabel);
+    const appliedInstructions = [];
+    report.instructionPlan.forEach((item) => {
+      const result = setPlayerInstruction(state, clubId, item.slotIndex, item.instructionKey);
+      if (result.ok) appliedInstructions.push(item);
+    });
+    if (appliedInstructions.length) changes.push(`${appliedInstructions.length} player instructions`);
+    if (clubId === state.activeClubId) {
+      addInbox(state, "Opposition Prep", `Prepared for ${report.opponentName}: ${report.recommendedPresetLabel}, ${report.recommendedMatchPrepLabel}, and ${appliedInstructions.length} player instruction${appliedInstructions.length === 1 ? "" : "s"}.`);
+    }
+    return {
+      ok: true,
+      message: `Opposition prep loaded for ${report.opponentName}.`,
+      report,
+      changes,
+      appliedInstructions
+    };
+  }
+
   function tacticalProfile(club) {
     normalizeTrainingSetup(club);
     const tactics = normalizeTactics(club && club.tactics);
@@ -8933,6 +9373,8 @@
     tacticalPresetOptions,
     tacticalPresetLabel,
     applyTacticalPreset,
+    oppositionReport,
+    applyOppositionPrep,
     liveMatchAssistantReport,
     postMatchTacticalReview,
     setTrainingPlan,

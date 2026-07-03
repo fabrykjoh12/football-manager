@@ -1566,6 +1566,146 @@ tr.highlight td {
   gap: 10px;
 }
 
+.opposition-report {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--strong-line);
+  border-radius: var(--radius);
+  padding: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 54%),
+    var(--panel);
+  box-shadow: var(--shadow-sm);
+}
+
+.opposition-report.embedded {
+  margin-top: 14px;
+  padding: 14px 0 0;
+  border-width: 1px 0 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.opposition-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.opposition-head p {
+  max-width: 780px;
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.opposition-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.opposition-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.opposition-metrics div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--panel-soft);
+}
+
+.opposition-metrics span,
+.opposition-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.opposition-metrics strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opposition-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.opposition-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.opposition-block {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.opposition-block h3 {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.opposition-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 58px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  background: var(--panel-soft);
+}
+
+.opposition-row > span {
+  min-width: 0;
+}
+
+.opposition-row strong,
+.opposition-row em {
+  flex: 0 0 auto;
+}
+
+.opposition-row.instruction strong {
+  max-width: 120px;
+  color: var(--accent-strong);
+  font-size: 12px;
+  text-align: right;
+}
+
+.opposition-notes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.opposition-report.compact .opposition-notes {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .tactical-roles-panel {
   grid-column: 1 / -1;
 }
@@ -4076,6 +4216,13 @@ button:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .opposition-grid,
+  .opposition-metrics,
+  .opposition-notes,
+  .opposition-report.compact .opposition-notes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .region-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -4194,6 +4341,9 @@ button:hover {
     .preset-grid,
     .phase-review-grid,
     .training-controls,
+    .opposition-grid,
+    .opposition-metrics,
+    .opposition-notes,
   .player-management-grid,
   .profile-card-grid,
   .need-grid,
@@ -4267,9 +4417,19 @@ button:hover {
   }
 
   .match-centre-meta,
-  .ratings-heading {
+  .ratings-heading,
+  .opposition-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .opposition-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .opposition-actions button {
+    flex: 1 1 160px;
   }
 
   .live-score-card {
