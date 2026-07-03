@@ -309,6 +309,17 @@ Design target:
 - The report UI is responsive, uses compact analysis cards, and passed desktop/mobile overflow checks.
 - Regression tests cover report generation, valid prep recommendations, Apply Prep persistence, and inbox creation.
 
+### Manager Media + Player Conversations
+
+- New saves and migrated saves now include manager interaction state with pending items, history, media pressure, and dressing-room trust.
+- Daily simulation can generate post-match media, pre-match media, and player conversations from match results, fixture proximity, playing-time pressure, contract mood, pathway promises, morale, and tactical-role concerns.
+- Manager interactions have choice cards with clear outcomes for morale, squad morale, sharpness, media pressure, dressing-room trust, promises, contract reassurance, pathway reassurance, and instruction simplification.
+- Dashboard now has a Manager Desk panel with active media/player items, trust/media metrics, and recent decisions.
+- Action Queue and Inbox can route directly into the response modal.
+- Player profiles now show recent manager conversations and pending response buttons.
+- Regression tests cover interaction state migration, media creation/resolution, player conversation resolution, morale changes, playing-time promise creation, and profile history access.
+- Browser smoke covered manager desk rendering, organic post-match media generation, the response modal, resolving a media answer, metric/history updates, and console-error checks during the main flow.
+
 ## Recent Commits
 
 - `0609255` Add player development and availability systems
@@ -329,26 +340,27 @@ Design target:
 - `75fec53` Add player instructions and role mastery
 - `ada8828` Add matchday tactical management
 - `90878ca` Add opposition scouting prep reports
+- `21ad016` Add manager media and conversations
 
-The latest completed feature phase is Opposition Scouting + Match Prep 2.0.
+The latest completed feature phase is Manager Media + Player Conversations.
 
 ## Current Roadmap
 
-### Next Phase: Manager Media + Player Conversations
+### Next Phase: Save Versioning + Mobile QA
 
 Planned work:
 
-- Pre-match and post-match media questions driven by form, board pressure, big fixtures, transfers, youth development, and rival matches.
-- Player conversation events for playing-time concerns, contract mood, tactical-role confusion, loan pathway promises, transfer interest, and morale dips.
-- Choice-based outcomes that affect morale, happiness, promises, media pressure, and dressing-room trust.
-- Inbox and dashboard surfaces that route the manager to active conversations before simming forward.
-- Profile and squad context showing recent conversations and promises.
-- Regression tests for conversation generation, choice outcomes, morale changes, and save migration safety.
+- Add explicit save/schema version checkpoints for older save shapes.
+- Build targeted migration fixtures for pre-calendar, pre-transfers, pre-academy, pre-staff, pre-instructions, pre-opposition, and pre-manager-interaction saves.
+- Add mobile QA passes for Dashboard, Match Day, Lineup, Tactics, Training, Transfers, Scouting, player profiles, and manager interaction modals.
+- Tighten responsive grids, modal scrolling, button wrapping, and dense table behavior where mobile checks find issues.
+- Add a lightweight browser-smoke checklist script or documented routine for recurring viewport checks.
+- Keep the production static JS setup unless the app is intentionally migrated to a framework.
 
 ### Later Phases
 
-- Save versioning and migration tests for more old-save shapes.
-- Better mobile layout QA.
+- Smarter AI squad rotation and opponent-specific lineups.
+- Deeper press-conference chains and recurring player relationship arcs.
 
 ## Engineering Notes
 
