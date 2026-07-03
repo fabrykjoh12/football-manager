@@ -1706,6 +1706,206 @@ tr.highlight td {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.manager-desk {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--strong-line);
+  border-radius: var(--radius);
+  padding: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 54%),
+    var(--panel);
+  box-shadow: var(--shadow-sm);
+}
+
+.manager-desk-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.manager-desk-head p {
+  max-width: 720px;
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.manager-desk-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.manager-interaction-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.manager-interaction-card,
+.manager-empty,
+.manager-history {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background: var(--panel-soft);
+}
+
+.manager-interaction-card h3,
+.manager-history h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.manager-interaction-card p,
+.manager-empty span,
+.manager-interaction-card small {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.manager-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.manager-card-foot span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.manager-history {
+  grid-column: span 1;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+}
+
+.history-row:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.history-row span {
+  min-width: 0;
+}
+
+.history-row b,
+.history-row small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-row small,
+.history-row em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.interaction-modal {
+  max-width: 900px;
+}
+
+.interaction-modal-body {
+  display: grid;
+  gap: 14px;
+}
+
+.interaction-context {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  background: var(--panel-soft);
+}
+
+.interaction-context h3 {
+  margin: 10px 0 6px;
+  font-size: 18px;
+}
+
+.interaction-context p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.interaction-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.interaction-meta span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: var(--muted-strong);
+  background: var(--panel);
+  font-size: 12px;
+}
+
+.interaction-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.interaction-choice {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  min-height: 148px;
+  padding: 13px;
+  text-align: left;
+  white-space: normal;
+}
+
+.interaction-choice strong {
+  font-size: 14px;
+}
+
+.interaction-choice span,
+.interaction-choice small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.interaction-choice small {
+  align-self: end;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+
+.interaction-history-card {
+  grid-column: 1 / -1;
+}
+
+.interaction-history-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 8px;
+}
+
 .tactical-roles-panel {
   grid-column: 1 / -1;
 }
@@ -4219,7 +4419,9 @@ button:hover {
   .opposition-grid,
   .opposition-metrics,
   .opposition-notes,
-  .opposition-report.compact .opposition-notes {
+  .opposition-report.compact .opposition-notes,
+  .manager-interaction-grid,
+  .interaction-choice-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -4344,6 +4546,8 @@ button:hover {
     .opposition-grid,
     .opposition-metrics,
     .opposition-notes,
+    .manager-interaction-grid,
+    .interaction-choice-grid,
   .player-management-grid,
   .profile-card-grid,
   .need-grid,
@@ -4418,7 +4622,8 @@ button:hover {
 
   .match-centre-meta,
   .ratings-heading,
-  .opposition-head {
+  .opposition-head,
+  .manager-desk-head {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -4430,6 +4635,12 @@ button:hover {
 
   .opposition-actions button {
     flex: 1 1 160px;
+  }
+
+  .manager-desk-metrics,
+  .manager-card-foot,
+  .history-row {
+    justify-content: flex-start;
   }
 
   .live-score-card {

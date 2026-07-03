@@ -340,6 +340,7 @@
     const leaders = Engine.calculateLeaders(state);
     const next = Engine.getNextFixture(state, club.id);
     const opposition = next ? Engine.oppositionReport(state, club.id, next) : null;
+    const managerDesk = Engine.managerInteractionReport(state, club.id);
     const board = Engine.boardReport(state);
     const cup = Engine.domesticCupReport(state);
     const europe = Engine.europeanReport(state);
@@ -371,6 +372,7 @@
         </div>
       </div>
       ${renderActionQueue()}
+      ${renderManagerDesk(managerDesk)}
       ${opposition ? renderOppositionReport(opposition, { title: "Opposition Report", compact: true }) : ""}
       <div class="dashboard-command section-gap">
         <div class="next-match-card">
@@ -1704,9 +1706,11 @@
     const offers = state.transfers.offers.filter((offer) => offer.status === "pending");
     const next = Engine.getNextFixture(state, state.activeClubId);
     const board = Engine.boardReport(state);
+    const managerDesk = Engine.managerInteractionReport(state, state.activeClubId);
     const weakestObjective = board.objectives.slice().sort((a, b) => a.progress - b.progress)[0];
     const matchToday = next && state.calendar && Engine.daysBetween(state.calendar.currentDate, next.date) <= 0;
     const items = [
+      ...managerDesk.pending.slice(0, 2).map((item) => ["Manager Desk", item.title, item.tone || "blue", item.id]),
       ...(matchToday ? [["Matchday", nextFixtureLabel(next), "green"]] : []),
       ...(board.confidence < 58 && weakestObjective ? [["Board", `${board.status.label}: ${weakestObjective.label}`, board.confidence < 40 ? "red" : "amber"]] : []),
       ...injured.slice(0, 3).map((player) => ["Injury", `${displayPlayerName(player)}: ${Engine.availabilityLabel(state, player)}`, "red"]),
@@ -1724,11 +1728,70 @@
       <div class="panel section-gap">
         <h2 class="panel-title">Action Queue</h2>
         <div class="action-grid">
-          ${items.map(([label, text, tone]) => `
+          ${items.map(([label, text, tone, interactionId]) => `
             <div class="message ${tone === "red" ? "bad" : tone === "amber" ? "warn" : tone === "green" ? "good" : ""}">
               <strong>${escapeHtml(label)}</strong><br>${escapeHtml(text)}
+              ${interactionId ? `<div class="table-actions" style="margin-top:8px"><button class="btn-compact" data-action="open-interaction" data-interaction-id="${escapeAttr(interactionId)}">Respond</button></div>` : ""}
             </div>
           `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderManagerDesk(report) {
+    if (!report) return "";
+    const pending = report.pending || [];
+    const history = report.history || [];
+    return `
+      <div class="manager-desk section-gap">
+        <div class="manager-desk-head">
+          <div>
+            <div class="eyebrow">Manager desk</div>
+            <h2 class="panel-title">Media & Conversations</h2>
+            <p>Handle questions and player talks before pressure turns into morale drift.</p>
+          </div>
+          <div class="manager-desk-metrics">
+            <span class="pill ${escapeAttr(report.dressingRoomTrustTone)}">Trust ${report.dressingRoomTrust}/100</span>
+            <span class="pill ${escapeAttr(report.mediaPressureTone)}">Media ${report.mediaPressure}/100</span>
+          </div>
+        </div>
+        <div class="manager-interaction-grid">
+          ${pending.length ? pending.slice(0, 3).map(renderManagerInteractionCard).join("") : `
+            <div class="manager-empty">
+              <strong>No active conversations</strong>
+              <span>The dressing room is quiet. Keep an eye on match results, contract mood, and playing-time pressure.</span>
+            </div>
+          `}
+          ${history.length ? `
+            <div class="manager-history">
+              <h3>Recent Decisions</h3>
+              ${history.slice(0, 3).map((item) => `
+                <div class="history-row">
+                  <span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.choiceLabel || "Resolved")}</small></span>
+                  <em>${item.resolvedDate ? escapeHtml(Engine.formatGameDate(item.resolvedDate)) : "-"}</em>
+                </div>
+              `).join("")}
+            </div>
+          ` : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderManagerInteractionCard(item) {
+    const player = item.playerId ? Engine.getPlayer(state, item.playerId) : null;
+    return `
+      <div class="manager-interaction-card ${escapeAttr(item.tone || "")}">
+        <div>
+          <span class="badge ${escapeAttr(item.tone || "blue")}">${escapeHtml(item.type === "media" ? "Media" : "Player")}</span>
+          <h3>${escapeHtml(item.title)}</h3>
+          <p>${escapeHtml(item.prompt)}</p>
+          <small>${player ? `${escapeHtml(displayPlayerName(player))} | ` : ""}${escapeHtml(item.detail || "")}</small>
+        </div>
+        <div class="manager-card-foot">
+          <span>Priority ${Math.round(item.priority || 0)}</span>
+          <button class="btn-primary" data-action="open-interaction" data-interaction-id="${escapeAttr(item.id)}">Respond</button>
         </div>
       </div>
     `;
@@ -2224,6 +2287,7 @@
     const pathway = Engine.pathwayPromiseReport(state, player.id);
     const loanReport = Engine.playerLoanReport(state, player.id);
     const roleDevelopment = Engine.roleDevelopmentReport(state, player.id);
+    const interactions = Engine.playerInteractionHistory(state, player.id);
     const isOwnPlayer = player.clubId === state.activeClubId;
     return `
       <div class="player-detail">
@@ -2257,6 +2321,7 @@
               ${renderRoleDevelopmentProfileCard(roleDevelopment)}
             </div>
           ` : ""}
+          ${interactions.length ? renderPlayerInteractionHistory(interactions) : ""}
           ${isOwnPlayer ? `<div class="player-management-grid">
             <div class="field">
               <label for="squad-role">Squad Role</label>
@@ -2464,6 +2529,28 @@
             `).join("")}
           </div>
         ` : ""}
+      </div>
+    `;
+  }
+
+  function renderPlayerInteractionHistory(interactions) {
+    return `
+      <div class="profile-card pathway-profile-card interaction-history-card">
+        <div class="profile-card-headline">
+          <strong>Manager Conversations</strong>
+          <span class="badge blue">${interactions.length} tracked</span>
+        </div>
+        <div class="interaction-history-list">
+          ${interactions.slice(0, 4).map((item) => `
+            <div class="history-row">
+              <span>
+                <b>${escapeHtml(item.title)}</b>
+                <small>${escapeHtml(item.status === "pending" ? "Pending response" : item.choiceLabel || "Resolved")}</small>
+              </span>
+              ${item.status === "pending" ? `<button class="btn-compact" data-action="open-interaction" data-interaction-id="${escapeAttr(item.id)}">Respond</button>` : `<em>${item.resolvedDate ? escapeHtml(Engine.formatGameDate(item.resolvedDate)) : "-"}</em>`}
+            </div>
+          `).join("")}
+        </div>
       </div>
     `;
   }
@@ -3245,12 +3332,16 @@
 
   function renderInbox() {
     if (!state.inbox.length) return `<div class="empty-state">Inbox empty.</div>`;
+    const pendingIds = new Set(Engine.managerInteractionReport(state, state.activeClubId).pending.map((item) => item.id));
     return `
       <div class="timeline">
         ${state.inbox.slice(0, 6).map((item) => `
           <div class="timeline-item">
             <strong>S${item.season} R${item.round}</strong>
-            <span><b>${escapeHtml(item.title)}</b><br><span class="small-muted">${escapeHtml(item.body)}</span></span>
+            <span>
+              <b>${escapeHtml(item.title)}</b><br><span class="small-muted">${escapeHtml(item.body)}</span>
+              ${item.interactionId && pendingIds.has(item.interactionId) ? `<br><button class="btn-compact" data-action="open-interaction" data-interaction-id="${escapeAttr(item.interactionId)}">Respond</button>` : ""}
+            </span>
           </div>
         `).join("")}
       </div>
@@ -3259,6 +3350,46 @@
 
   function renderModal() {
     if (!ui.modal) return "";
+    if (ui.modal.type === "interaction") {
+      const report = Engine.managerInteractionReport(state, state.activeClubId);
+      const interaction = report.pending.find((item) => item.id === ui.modal.interactionId);
+      if (!interaction) return "";
+      const player = interaction.playerId ? Engine.getPlayer(state, interaction.playerId) : null;
+      return `
+        <div class="modal-backdrop" data-action="close-modal">
+          <div class="modal interaction-modal" data-modal>
+            <div class="modal-head">
+              <div>
+                <h2>${escapeHtml(interaction.title)}</h2>
+                <div class="small-muted">${escapeHtml(interaction.type === "media" ? "Media question" : "Player conversation")}${player ? ` | ${escapeHtml(player.name)} | ${positionBadge(player.position)}` : ""}</div>
+              </div>
+              <button class="btn-compact" data-action="close-modal">Close</button>
+            </div>
+            <div class="interaction-modal-body">
+              <div class="interaction-context ${escapeAttr(interaction.tone || "blue")}">
+                <span class="badge ${escapeAttr(interaction.tone || "blue")}">Priority ${Math.round(interaction.priority || 0)}</span>
+                <h3>${escapeHtml(interaction.prompt)}</h3>
+                <p>${escapeHtml(interaction.detail || "")}</p>
+                <div class="interaction-meta">
+                  <span>Trust ${report.dressingRoomTrust}/100</span>
+                  <span>Media ${report.mediaPressure}/100</span>
+                  ${interaction.expiresDate ? `<span>Expires ${escapeHtml(Engine.formatGameDate(interaction.expiresDate))}</span>` : ""}
+                </div>
+              </div>
+              <div class="interaction-choice-grid">
+                ${(interaction.choices || []).map((choice) => `
+                  <button class="interaction-choice ${escapeAttr(choice.tone || "")}" data-action="resolve-interaction" data-interaction-id="${escapeAttr(interaction.id)}" data-choice-key="${escapeAttr(choice.key)}">
+                    <strong>${escapeHtml(choice.label)}</strong>
+                    <span>${escapeHtml(choice.detail || "")}</span>
+                    <small>${renderChoiceEffects(choice.effects || {})}</small>
+                  </button>
+                `).join("")}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
     if (ui.modal.type === "player") {
       const player = Engine.getPlayer(state, ui.modal.playerId);
       if (!player) return "";
@@ -3459,6 +3590,19 @@
     if (action === "view-player") {
       ui.selectedPlayerId = actionEl.dataset.playerId;
       ui.modal = { type: "player", playerId: actionEl.dataset.playerId };
+      render();
+      return;
+    }
+    if (action === "open-interaction") {
+      ui.modal = { type: "interaction", interactionId: actionEl.dataset.interactionId };
+      render();
+      return;
+    }
+    if (action === "resolve-interaction") {
+      const result = Engine.resolveManagerInteraction(state, actionEl.dataset.interactionId, actionEl.dataset.choiceKey);
+      Storage.save(state);
+      ui.modal = null;
+      toast(result.message, result.ok ? "good" : "bad");
       render();
       return;
     }
@@ -4234,6 +4378,18 @@
         <small>${escapeHtml(detail || "")}</small>
       </div>
     `;
+  }
+
+  function renderChoiceEffects(effects) {
+    const labels = [];
+    if (Number.isFinite(effects.playerMorale)) labels.push(`Player morale ${effects.playerMorale >= 0 ? "+" : ""}${effects.playerMorale}`);
+    if (Number.isFinite(effects.squadMorale)) labels.push(`Squad morale ${effects.squadMorale >= 0 ? "+" : ""}${effects.squadMorale}`);
+    if (Number.isFinite(effects.trust)) labels.push(`Trust ${effects.trust >= 0 ? "+" : ""}${effects.trust}`);
+    if (Number.isFinite(effects.mediaPressure)) labels.push(`Media ${effects.mediaPressure >= 0 ? "+" : ""}${effects.mediaPressure}`);
+    if (Number.isFinite(effects.sharpness)) labels.push(`Sharpness ${effects.sharpness >= 0 ? "+" : ""}${effects.sharpness}`);
+    if (effects.promisePlayingTime) labels.push("Promise");
+    if (effects.simplifyInstruction) labels.push("Simplify");
+    return escapeHtml(labels.slice(0, 4).join(" | ") || "Low impact");
   }
 
   function effectMeter(label, value, detail) {

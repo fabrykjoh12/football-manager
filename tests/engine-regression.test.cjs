@@ -231,6 +231,33 @@ function run() {
   });
   assert.ok(save.inbox.length > inboxBeforeOppositionPrep, "Opposition prep should create an inbox note");
 
+  const interactionSave = Engine.createNewSave({ selectedClubId: "pl-ars", seed: 8181 });
+  const interactionClub = Engine.getClub(interactionSave, interactionSave.activeClubId);
+  const interactionReport = Engine.managerInteractionReport(interactionSave, interactionClub.id);
+  assert.ok(interactionReport.mediaPressure >= 0 && interactionReport.dressingRoomTrust >= 0, "Manager interaction report should expose pressure and trust");
+  const mediaInteraction = Engine.createManagerInteraction(interactionSave, "preMatchMedia", { force: true });
+  assert.ok(mediaInteraction && mediaInteraction.choices.length >= 3, "Pre-match media interactions should be creatable with choices");
+  assert.ok(Engine.managerInteractionReport(interactionSave, interactionClub.id).pending.some((item) => item.id === mediaInteraction.id), "Created media interactions should be pending");
+  assert.ok(interactionSave.inbox.some((item) => item.interactionId === mediaInteraction.id), "Media interactions should create actionable inbox items");
+  const mediaPressureBefore = Engine.managerInteractionReport(interactionSave, interactionClub.id).mediaPressure;
+  const mediaResolution = Engine.resolveManagerInteraction(interactionSave, mediaInteraction.id, "confident");
+  assert.equal(mediaResolution.ok, true, "Media interactions should resolve by choice");
+  assert.notEqual(Engine.managerInteractionReport(interactionSave, interactionClub.id).mediaPressure, mediaPressureBefore, "Media choices should affect media pressure");
+  assert.ok(Engine.managerInteractionReport(interactionSave, interactionClub.id).history.some((item) => item.id === mediaInteraction.id), "Resolved media interactions should enter history");
+  const conversationPlayer = Engine.clubPlayers(interactionSave, interactionClub.id).find((player) => player.squadRole === "star") || Engine.clubPlayers(interactionSave, interactionClub.id)[0];
+  const moraleBeforeConversation = conversationPlayer.morale;
+  const playerConversation = Engine.createManagerInteraction(interactionSave, "playerConversation", { playerId: conversationPlayer.id, category: "playingTime", force: true });
+  assert.ok(playerConversation && playerConversation.playerId === conversationPlayer.id, "Player conversations should target the selected player");
+  const conversationResolution = Engine.resolveManagerInteraction(interactionSave, playerConversation.id, "promise_minutes");
+  assert.equal(conversationResolution.ok, true, "Player conversations should resolve by choice");
+  assert.ok(conversationPlayer.morale > moraleBeforeConversation, "Conversation choices should affect player morale");
+  assert.equal(conversationPlayer.promises.playingTime.status, "active", "Playing-time conversation can create a promise");
+  assert.ok(Engine.playerInteractionHistory(interactionSave, conversationPlayer.id).some((item) => item.id === playerConversation.id), "Player profiles should be able to read conversation history");
+  const legacyInteractionSave = Engine.cloneState(interactionSave);
+  delete legacyInteractionSave.managerInteractions;
+  const migratedInteractionSave = Engine.migrateState(legacyInteractionSave);
+  assert.ok(Engine.managerInteractionReport(migratedInteractionSave, migratedInteractionSave.activeClubId).pending, "Migration should backfill manager interaction state");
+
   const injuredStarter = Engine.getPlayer(save, activeClub.lineup[0]);
   injuredStarter.injury = {
     type: "Test knock",

@@ -1018,6 +1018,13 @@
         outgoingLoans: [],
         nextLoanId: 1
       },
+      managerInteractions: {
+        pending: [],
+        history: [],
+        nextId: 1,
+        mediaPressure: 42,
+        dressingRoomTrust: 62
+      },
       inbox: [],
       lastMatch: null,
       createdAt: new Date().toISOString(),
@@ -1059,6 +1066,33 @@
       }
     });
     return state.scouting;
+  }
+
+  function ensureManagerInteractionState(state) {
+    state.managerInteractions = state.managerInteractions || {};
+    const interactions = state.managerInteractions;
+    interactions.pending = Array.isArray(interactions.pending) ? interactions.pending : [];
+    interactions.history = Array.isArray(interactions.history) ? interactions.history : [];
+    const maxId = interactions.pending.concat(interactions.history).reduce((max, item) => {
+      const number = Number(String(item.id || "").replace(/[^0-9]/g, ""));
+      return Number.isFinite(number) ? Math.max(max, number) : max;
+    }, 0);
+    interactions.nextId = Math.max(interactions.nextId || 1, maxId + 1);
+    interactions.mediaPressure = Math.round(clamp(Number(interactions.mediaPressure) || 42, 0, 100));
+    interactions.dressingRoomTrust = Math.round(clamp(Number(interactions.dressingRoomTrust) || 62, 0, 100));
+    interactions.pending = interactions.pending
+      .filter((item) => item && item.status !== "resolved")
+      .map((item) => ({
+        ...item,
+        status: item.status || "pending",
+        choices: Array.isArray(item.choices) ? item.choices : []
+      }))
+      .slice(0, 6);
+    interactions.history = interactions.history
+      .filter(Boolean)
+      .map((item) => ({ ...item, status: item.status || "resolved" }))
+      .slice(0, 24);
+    return interactions;
   }
 
   function ensureAcademyState(state) {
@@ -5134,6 +5168,448 @@
     };
   }
 
+  function interactionTone(priority) {
+    if (priority >= 82) return "red";
+    if (priority >= 64) return "amber";
+    if (priority >= 44) return "blue";
+    return "green";
+  }
+
+  function managerInteractionTitle(type, category, player) {
+    if (type === "media" && category === "postMatch") return "Post-Match Media";
+    if (type === "media") return "Pre-Match Media";
+    if (category === "playingTime") return `${playerDisplayName(player)} wants minutes`;
+    if (category === "contract") return `${playerDisplayName(player)} wants clarity`;
+    if (category === "pathway") return `${playerDisplayName(player)} pathway check`;
+    if (category === "role") return `${playerDisplayName(player)} needs tactical clarity`;
+    return `${playerDisplayName(player)} conversation`;
+  }
+
+  function managerInteractionChoice(key, label, detail, effects, tone) {
+    return {
+      key,
+      label,
+      detail,
+      tone: tone || "blue",
+      effects: effects || {}
+    };
+  }
+
+  function queueManagerInteraction(state, interaction, options) {
+    const manager = ensureManagerInteractionState(state);
+    if (!interaction) return null;
+    const force = options && options.force;
+    if (!force && manager.pending.length >= 3) return null;
+    const duplicate = manager.pending.find((item) =>
+      item.type === interaction.type &&
+      item.category === interaction.category &&
+      (interaction.playerId ? item.playerId === interaction.playerId : item.fixtureId === interaction.fixtureId)
+    );
+    if (duplicate) return duplicate;
+    const id = `mi-${state.season || 1}-${manager.nextId++}`;
+    const queued = {
+      id,
+      status: "pending",
+      createdDate: state.calendar ? state.calendar.currentDate : null,
+      season: state.season || 1,
+      round: state.league ? state.league.currentRound + 1 : 1,
+      ...interaction
+    };
+    manager.pending.unshift(queued);
+    manager.pending = manager.pending.slice(0, 6);
+    addInbox(
+      state,
+      queued.type === "media" ? "Media Request" : "Player Conversation",
+      `${queued.title}: ${queued.prompt}`,
+      { interactionId: queued.id, interactionType: queued.type }
+    );
+    return queued;
+  }
+
+  function recentInteractionExists(state, category, entityId, days) {
+    const manager = ensureManagerInteractionState(state);
+    const currentDate = state.calendar ? state.calendar.currentDate : null;
+    const limit = days || 18;
+    const all = manager.pending.concat(manager.history);
+    return all.some((item) => {
+      const sameCategory = item.category === category;
+      const sameEntity = entityId ? item.playerId === entityId || item.fixtureId === entityId : true;
+      if (!sameCategory || !sameEntity) return false;
+      if (!currentDate || !item.createdDate && !item.resolvedDate) return true;
+      const date = item.resolvedDate || item.createdDate;
+      return Math.abs(daysBetween(date, currentDate)) <= limit;
+    });
+  }
+
+  function matchResultContext(state, fixture) {
+    if (!fixture || fixture.homeGoals === null || fixture.awayGoals === null) {
+      return { result: "pending", gf: 0, ga: 0, opponentName: "the opponent", score: "-" };
+    }
+    const activeHome = fixture.homeClubId === state.activeClubId;
+    const gf = activeHome ? fixture.homeGoals : fixture.awayGoals;
+    const ga = activeHome ? fixture.awayGoals : fixture.homeGoals;
+    const opponent = getClub(state, activeHome ? fixture.awayClubId : fixture.homeClubId);
+    return {
+      result: gf > ga ? "win" : gf === ga ? "draw" : "loss",
+      gf,
+      ga,
+      opponentName: opponent ? opponent.name : "the opponent",
+      score: `${gf}-${ga}`
+    };
+  }
+
+  function buildPreMatchMediaInteraction(state, clubId, fixture) {
+    const club = getClub(state, clubId);
+    if (!club || !fixture) return null;
+    const opponentId = fixture.homeClubId === clubId ? fixture.awayClubId : fixture.homeClubId;
+    const opponent = getClub(state, opponentId);
+    const board = boardReport(state);
+    const daysToMatch = fixture.date && state.calendar ? Math.max(0, daysBetween(state.calendar.currentDate, fixture.date)) : null;
+    const opposition = oppositionReport(state, clubId, fixture);
+    const priority = clamp(48 + (board.confidence < 52 ? 16 : 0) + (daysToMatch === 0 ? 12 : 0) + (opposition && opposition.tacticalEdge < -4 ? 10 : 0), 36, 92);
+    const context = opposition ? `${opposition.style.summary} | ${opposition.recommendedPresetLabel}` : "General match preview";
+    return {
+      type: "media",
+      category: "preMatch",
+      title: managerInteractionTitle("media", "preMatch"),
+      prompt: `The press ask how ${club.name} will approach ${opponent ? opponent.name : "the next opponent"}.`,
+      detail: context,
+      fixtureId: fixture.id,
+      opponentId,
+      priority: Math.round(priority),
+      tone: interactionTone(priority),
+      expiresDate: fixture.date || null,
+      choices: [
+        managerInteractionChoice("respect", "Respect the opponent", "Lower pressure and keep the dressing room calm.", { mediaPressure: -5, trust: 2, squadMorale: 1 }, "green"),
+        managerInteractionChoice("confident", "Back the squad", "Give the team a lift, but invite more attention.", { mediaPressure: 5, trust: 2, squadMorale: 2, sharpness: 1 }, "blue"),
+        managerInteractionChoice("demand", "Demand a response", "Raise standards and intensity at the cost of comfort.", { mediaPressure: 3, trust: -1, squadMorale: -1, sharpness: 2 }, "amber")
+      ]
+    };
+  }
+
+  function buildPostMatchMediaInteraction(state, clubId, fixture) {
+    const club = getClub(state, clubId);
+    if (!club || !fixture) return null;
+    const context = matchResultContext(state, fixture);
+    const priority = context.result === "loss" ? 78 : context.result === "draw" ? 58 : 46;
+    const resultText = context.result === "win" ? "win" : context.result === "draw" ? "draw" : "defeat";
+    return {
+      type: "media",
+      category: "postMatch",
+      title: managerInteractionTitle("media", "postMatch"),
+      prompt: `Media want your reaction to the ${context.score} ${resultText} against ${context.opponentName}.`,
+      detail: `${club.name} ${context.result === "win" ? "took momentum" : context.result === "draw" ? "shared the points" : "need a response"}.`,
+      fixtureId: fixture.id,
+      priority,
+      tone: interactionTone(priority),
+      expiresDate: state.calendar ? addDays(state.calendar.currentDate, 2) : null,
+      choices: [
+        managerInteractionChoice("take_responsibility", "Take responsibility", "Protect the squad and reduce external heat.", { mediaPressure: -6, trust: 4, squadMorale: context.result === "loss" ? 1 : 0 }, "green"),
+        managerInteractionChoice("praise_group", "Praise the group", "Reward the dressing room and build confidence.", { mediaPressure: context.result === "loss" ? 2 : -2, trust: 2, squadMorale: context.result === "loss" ? 0 : 2 }, "blue"),
+        managerInteractionChoice("raise_standards", "Raise standards", "Challenge the group to respond in training.", { mediaPressure: 4, trust: -2, squadMorale: -2, sharpness: 2 }, "amber")
+      ]
+    };
+  }
+
+  function conversationCategoryForPlayer(state, player, report) {
+    const pathway = pathwayPromiseReport(state, player.id);
+    const roleContext = playerRoleSlotContext(state, player.id, player.clubId);
+    if (pathway && (pathway.label === "At Risk" || pathway.status === "broken")) return "pathway";
+    if (report.playingTime.pressure >= 54) return "playingTime";
+    if (player.contractYears <= 1 && report.score < 68) return "contract";
+    if (roleContext && (roleContext.instructionFit < 55 || roleContext.roleFit < 56)) return "role";
+    return "morale";
+  }
+
+  function playerConversationPriority(state, player, report) {
+    const pathway = pathwayPromiseReport(state, player.id);
+    const roleContext = playerRoleSlotContext(state, player.id, player.clubId);
+    return round(clamp(
+      (100 - report.score) * 0.72 +
+      report.playingTime.pressure * 0.48 +
+      (player.contractYears <= 1 ? 14 : 0) +
+      (player.morale < 42 ? 12 : 0) +
+      (pathway && pathway.label === "At Risk" ? 18 : 0) +
+      (roleContext && (roleContext.instructionFit < 55 || roleContext.roleFit < 56) ? 10 : 0),
+      1,
+      96
+    ), 0);
+  }
+
+  function playerConversationCandidate(state, clubId) {
+    const squad = clubPlayers(state, clubId);
+    const rows = squad
+      .map((player) => ({ player, report: playerHappinessReport(state, player.id) }))
+      .filter((item) => item.report)
+      .map((item) => ({
+        ...item,
+        category: conversationCategoryForPlayer(state, item.player, item.report),
+        priority: playerConversationPriority(state, item.player, item.report)
+      }))
+      .filter((item) => item.priority >= 38 && !recentInteractionExists(state, item.category, item.player.id, 16))
+      .sort((a, b) => b.priority - a.priority);
+    return rows[0] || null;
+  }
+
+  function buildPlayerConversationInteraction(state, clubId, player, category) {
+    const club = getClub(state, clubId);
+    if (!club || !player) return null;
+    const report = playerHappinessReport(state, player.id);
+    if (!report) return null;
+    const actualCategory = category || conversationCategoryForPlayer(state, player, report);
+    const priority = playerConversationPriority(state, player, report);
+    const base = {
+      type: "player",
+      category: actualCategory,
+      title: managerInteractionTitle("player", actualCategory, player),
+      playerId: player.id,
+      playerName: player.name,
+      priority,
+      tone: interactionTone(priority),
+      expiresDate: state.calendar ? addDays(state.calendar.currentDate, 10) : null
+    };
+    if (actualCategory === "playingTime") {
+      return {
+        ...base,
+        prompt: `${player.name} wants to discuss their role after ${report.playingTime.starts}/${report.playingTime.matches} starts.`,
+        detail: `${report.roleLabel} | ${report.playingTime.label}`,
+        choices: [
+          managerInteractionChoice("promise_minutes", "Promise more minutes", "Give them a clear four-week playing-time target.", { playerMorale: 8, trust: 1, promisePlayingTime: true }, "green"),
+          managerInteractionChoice("explain_role", "Explain the role", "Be honest without creating a new promise.", { playerMorale: -2, trust: 3, mediaPressure: -1 }, "blue"),
+          managerInteractionChoice("challenge_player", "Challenge them", "Demand a stronger training response.", { playerMorale: -5, trust: -2, sharpness: 3 }, "amber")
+        ]
+      };
+    }
+    if (actualCategory === "contract") {
+      const renewal = contractRenewalProfile(state, player.id);
+      return {
+        ...base,
+        prompt: `${player.name}'s camp wants clarity on the contract situation.`,
+        detail: renewal ? `${renewal.label} | ${formatMoney(renewal.requestedWage)} demand` : "Contract expiring",
+        choices: [
+          managerInteractionChoice("promise_talks", "Promise talks soon", "Ease tension and commit to revisiting the deal.", { playerMorale: 5, trust: 2, contractReassurance: true }, "green"),
+          managerInteractionChoice("focus_football", "Focus on football", "Delay talks and keep standards clear.", { playerMorale: -3, trust: -1, sharpness: 1 }, "amber"),
+          managerInteractionChoice("open_exit", "Be open to offers", "Reduce uncertainty but risk losing commitment.", { playerMorale: 2, trust: -2, mediaPressure: 2 }, "blue")
+        ]
+      };
+    }
+    if (actualCategory === "pathway") {
+      const pathway = pathwayPromiseReport(state, player.id);
+      return {
+        ...base,
+        prompt: `${player.name} wants an update on their development pathway.`,
+        detail: pathway ? `${pathway.label} | ${pathway.detail}` : "Pathway review",
+        choices: [
+          managerInteractionChoice("recommit_pathway", "Recommit to the pathway", "Reassure them and reset the next review window.", { playerMorale: 6, trust: 2, pathwayReassurance: true }, "green"),
+          managerInteractionChoice("honest_review", "Give an honest review", "Protect trust with direct feedback.", { playerMorale: -1, trust: 3, sharpness: 1 }, "blue"),
+          managerInteractionChoice("increase_demands", "Increase demands", "Ask for more in training before the next chance.", { playerMorale: -3, trust: -1, sharpness: 2 }, "amber")
+        ]
+      };
+    }
+    if (actualCategory === "role") {
+      const context = playerRoleSlotContext(state, player.id, clubId);
+      return {
+        ...base,
+        prompt: `${player.name} is unsure about their tactical instructions.`,
+        detail: context ? `${tacticalRoleLabel(context.roleKey)} | ${playerInstructionLabel(context.instructionKey)}` : "Tactical role concern",
+        choices: [
+          managerInteractionChoice("simplify_instruction", "Simplify instruction", "Move them back toward a balanced brief.", { playerMorale: 4, trust: 2, simplifyInstruction: true }, "green"),
+          managerInteractionChoice("coach_detail", "Coach the details", "Keep the plan and build understanding.", { playerMorale: 1, trust: 2, sharpness: 1 }, "blue"),
+          managerInteractionChoice("demand_adaptation", "Demand adaptation", "Insist they learn the role quickly.", { playerMorale: -4, trust: -2, sharpness: 2 }, "amber")
+        ]
+      };
+    }
+    return {
+      ...base,
+      prompt: `${player.name} has asked for a quick conversation about morale and their place in the squad.`,
+      detail: `${report.label} | ${report.reasons[0]}`,
+      choices: [
+        managerInteractionChoice("support_player", "Offer support", "Give them a private lift.", { playerMorale: 7, trust: 2 }, "green"),
+        managerInteractionChoice("fresh_start", "Offer a fresh start", "Draw a line under the issue and reset expectations.", { playerMorale: 4, trust: 1, mediaPressure: -1 }, "blue"),
+        managerInteractionChoice("demand_response", "Demand a response", "Make clear that performances must improve.", { playerMorale: -4, trust: -1, sharpness: 2 }, "amber")
+      ]
+    };
+  }
+
+  function createManagerInteraction(state, type, options) {
+    ensureManagerInteractionState(state);
+    ensureCalendar(state);
+    const opts = options || {};
+    const clubId = opts.clubId || state.activeClubId;
+    const club = getClub(state, clubId);
+    if (!club) return null;
+    if (type === "preMatchMedia") return queueManagerInteraction(state, buildPreMatchMediaInteraction(state, clubId, opts.fixture || getNextFixture(state, clubId)), opts);
+    if (type === "postMatchMedia") return queueManagerInteraction(state, buildPostMatchMediaInteraction(state, clubId, opts.fixture || state.lastMatch), opts);
+    if (type === "playerConversation") {
+      const player = opts.playerId ? getPlayer(state, opts.playerId) : null;
+      const candidate = player ? { player, category: opts.category } : playerConversationCandidate(state, clubId);
+      return candidate ? queueManagerInteraction(state, buildPlayerConversationInteraction(state, clubId, candidate.player, opts.category || candidate.category), opts) : null;
+    }
+    return null;
+  }
+
+  function managerInteractionById(state, interactionId) {
+    const manager = ensureManagerInteractionState(state);
+    return manager.pending.find((item) => item.id === interactionId) || null;
+  }
+
+  function applyInteractionEffects(state, interaction, choice) {
+    const manager = ensureManagerInteractionState(state);
+    const effects = choice.effects || {};
+    const club = getClub(state, state.activeClubId);
+    const player = interaction.playerId ? getPlayer(state, interaction.playerId) : null;
+    const outcome = [];
+    if (Number.isFinite(effects.mediaPressure)) {
+      manager.mediaPressure = Math.round(clamp(manager.mediaPressure + effects.mediaPressure, 0, 100));
+      outcome.push(`Media pressure ${effects.mediaPressure >= 0 ? "+" : ""}${effects.mediaPressure}`);
+    }
+    if (Number.isFinite(effects.trust)) {
+      manager.dressingRoomTrust = Math.round(clamp(manager.dressingRoomTrust + effects.trust, 0, 100));
+      outcome.push(`Trust ${effects.trust >= 0 ? "+" : ""}${effects.trust}`);
+    }
+    if (club && Number.isFinite(effects.squadMorale)) {
+      clubPlayers(state, club.id).forEach((item) => {
+        item.morale = Math.round(clamp(item.morale + effects.squadMorale, 0, 100));
+      });
+      outcome.push(`Squad morale ${effects.squadMorale >= 0 ? "+" : ""}${effects.squadMorale}`);
+    }
+    if (club && Number.isFinite(effects.sharpness)) {
+      clubPlayers(state, club.id).forEach((item) => {
+        if (random(state) < 0.55) item.sharpness = Math.round(clamp(item.sharpness + effects.sharpness, 0, 100));
+      });
+      outcome.push(`Training edge ${effects.sharpness >= 0 ? "+" : ""}${effects.sharpness}`);
+    }
+    if (player && Number.isFinite(effects.playerMorale)) {
+      player.morale = Math.round(clamp(player.morale + effects.playerMorale, 0, 100));
+      outcome.push(`${playerDisplayName(player)} morale ${effects.playerMorale >= 0 ? "+" : ""}${effects.playerMorale}`);
+    }
+    if (player && effects.promisePlayingTime) {
+      player.promises = player.promises || {};
+      player.promises.playingTime = {
+        status: "active",
+        createdDate: state.calendar.currentDate,
+        dueDate: addDays(state.calendar.currentDate, 28),
+        role: player.squadRole,
+        expectedStartRate: roleExpectation(player.squadRole).expectedStartRate,
+        source: "conversation"
+      };
+      player.happiness.lastPromiseDay = state.calendar.day || 1;
+      outcome.push("Playing-time promise created");
+    }
+    if (player && effects.contractReassurance) {
+      player.happiness.lastContractDay = state.calendar.day || 1;
+      player.promises = player.promises || {};
+      player.promises.contractTalks = {
+        status: "active",
+        createdDate: state.calendar.currentDate,
+        dueDate: addDays(state.calendar.currentDate, 21)
+      };
+      outcome.push("Contract review promised");
+    }
+    if (player && effects.pathwayReassurance && player.promises && player.promises.pathway) {
+      player.promises.pathway.lastAlertDay = state.calendar.day || 1;
+      player.promises.pathway.dueDate = player.promises.pathway.dueDate || addDays(state.calendar.currentDate, 42);
+      outcome.push("Pathway review reset");
+    }
+    if (player && effects.simplifyInstruction && club) {
+      const context = playerRoleSlotContext(state, player.id, club.id);
+      if (context && Number.isFinite(context.slotIndex)) {
+        normalizePlayerInstructions(club);
+        club.playerInstructions[String(context.slotIndex)] = "balanced";
+        outcome.push("Instruction simplified");
+      }
+    }
+    return outcome;
+  }
+
+  function resolveManagerInteraction(state, interactionId, choiceKey) {
+    const manager = ensureManagerInteractionState(state);
+    const index = manager.pending.findIndex((item) => item.id === interactionId);
+    if (index < 0) return { ok: false, message: "Conversation not found." };
+    const interaction = manager.pending[index];
+    const choice = (interaction.choices || []).find((item) => item.key === choiceKey);
+    if (!choice) return { ok: false, message: "Response unavailable." };
+    const outcome = applyInteractionEffects(state, interaction, choice);
+    const resolved = {
+      ...interaction,
+      status: "resolved",
+      resolvedDate: state.calendar ? state.calendar.currentDate : null,
+      choiceKey: choice.key,
+      choiceLabel: choice.label,
+      outcome
+    };
+    manager.pending.splice(index, 1);
+    manager.history.unshift(resolved);
+    manager.history = manager.history.slice(0, 24);
+    addInbox(state, interaction.type === "media" ? "Media Response" : "Conversation Complete", `${interaction.title}: ${choice.label}. ${outcome.slice(0, 2).join(" | ") || "No major squad change."}`);
+    return {
+      ok: true,
+      message: `${interaction.type === "media" ? "Media response" : "Conversation"} handled.`,
+      interaction: resolved,
+      choice,
+      outcome
+    };
+  }
+
+  function managerInteractionReport(state, clubId) {
+    const manager = ensureManagerInteractionState(state);
+    const club = getClub(state, clubId || state.activeClubId);
+    const pending = manager.pending
+      .slice()
+      .sort((a, b) => b.priority - a.priority || String(a.createdDate || "").localeCompare(String(b.createdDate || "")));
+    const history = manager.history.slice(0, 8);
+    const trustTone = manager.dressingRoomTrust >= 72 ? "green" : manager.dressingRoomTrust >= 54 ? "blue" : manager.dressingRoomTrust >= 38 ? "amber" : "red";
+    const pressureTone = manager.mediaPressure <= 34 ? "green" : manager.mediaPressure <= 58 ? "blue" : manager.mediaPressure <= 76 ? "amber" : "red";
+    return {
+      clubId: club ? club.id : null,
+      pending,
+      history,
+      urgent: pending.filter((item) => item.priority >= 70),
+      mediaPressure: manager.mediaPressure,
+      mediaPressureTone: pressureTone,
+      dressingRoomTrust: manager.dressingRoomTrust,
+      dressingRoomTrustTone: trustTone,
+      nextInteraction: pending[0] || null
+    };
+  }
+
+  function playerInteractionHistory(state, playerId) {
+    const manager = ensureManagerInteractionState(state);
+    return manager.pending
+      .concat(manager.history)
+      .filter((item) => item.playerId === playerId)
+      .sort((a, b) => String(b.resolvedDate || b.createdDate || "").localeCompare(String(a.resolvedDate || a.createdDate || "")))
+      .slice(0, 6);
+  }
+
+  function maybeGenerateManagerInteractionDaily(state, context) {
+    const manager = ensureManagerInteractionState(state);
+    const club = getClub(state, state.activeClubId);
+    if (!club || manager.pending.length >= 3) return null;
+    const match = context && context.matchday ? context.matchday.activeMatch : null;
+    if (match && (match.homeClubId === club.id || match.awayClubId === club.id) && !recentInteractionExists(state, "postMatch", match.id, 10)) {
+      const interaction = queueManagerInteraction(state, buildPostMatchMediaInteraction(state, club.id, match));
+      if (interaction) return { type: "manager-interaction", title: interaction.title, interactionId: interaction.id };
+    }
+
+    const next = getNextFixture(state, club.id);
+    const daysToNext = next && next.date && state.calendar ? Math.max(0, daysBetween(state.calendar.currentDate, next.date)) : null;
+    if (next && daysToNext !== null && daysToNext <= 2 && !recentInteractionExists(state, "preMatch", next.id, 8)) {
+      const chance = daysToNext === 0 ? 0.7 : 0.28 + manager.mediaPressure / 260;
+      if (random(state) < chance) {
+        const interaction = queueManagerInteraction(state, buildPreMatchMediaInteraction(state, club.id, next));
+        if (interaction) return { type: "manager-interaction", title: interaction.title, interactionId: interaction.id };
+      }
+    }
+
+    const candidate = playerConversationCandidate(state, club.id);
+    if (!candidate) return null;
+    const chance = clamp(0.12 + candidate.priority / 180 + (manager.dressingRoomTrust < 44 ? 0.08 : 0), 0.16, 0.72);
+    if (random(state) > chance) return null;
+    const interaction = queueManagerInteraction(state, buildPlayerConversationInteraction(state, club.id, candidate.player, candidate.category));
+    return interaction ? { type: "manager-interaction", title: interaction.title, interactionId: interaction.id, playerId: interaction.playerId } : null;
+  }
+
   function contractRenewalProfile(state, playerId) {
     const player = getPlayer(state, playerId);
     const club = player ? getClub(state, player.clubId) : null;
@@ -6406,7 +6882,8 @@
     const happinessEvent = processSquadHappinessDaily(state);
     const pathwayEvent = processPathwayPromisesDaily(state);
     const boardEvent = processBoardDaily(state);
-    if (clubEvent || happinessEvent || pathwayEvent || roleDevelopmentEvent || scoutingEvent || academyEvent || loanEvent || boardEvent || matchday.cupEvent || matchday.europeEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
+    const managerInteractionEvent = maybeGenerateManagerInteractionDaily(state, { matchday, clubEvent, happinessEvent, pathwayEvent, boardEvent });
+    if (managerInteractionEvent || clubEvent || happinessEvent || pathwayEvent || roleDevelopmentEvent || scoutingEvent || academyEvent || loanEvent || boardEvent || matchday.cupEvent || matchday.europeEvent || offer || aiMarketMove || calendar.day % 7 === 0 || matchday.fixtures.length) refreshTransferMarket(state);
 
     let seasonEnded = false;
     let seasonSummary = null;
@@ -6432,6 +6909,7 @@
       roleDevelopmentEvent,
       boardEvent,
       pathwayEvent,
+      managerInteractionEvent,
       cupEvent: matchday.cupEvent,
       europeEvent: matchday.europeEvent,
       clubEvent,
@@ -6460,7 +6938,7 @@
   function describeDayEvent(state, before, result) {
     if (result.activeMatch) return { type: "match", title: "Matchday", body: "The next match is ready." };
     if (result.seasonEnded) return { type: "season", title: "Season Complete", body: result.seasonSummary ? `${result.seasonSummary.championName} won the league.` : "The season has finished." };
-    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.europeEvent ? { type: result.europeEvent.type, title: result.europeEvent.title } : null) || (result.cupEvent ? { type: result.cupEvent.type, title: result.cupEvent.title } : null) || (result.boardEvent ? { type: result.boardEvent.type, title: result.boardEvent.title } : null) || (result.loanEvent ? { type: result.loanEvent.type, title: result.loanEvent.title } : null) || (result.pathwayEvent ? { type: result.pathwayEvent.type, title: result.pathwayEvent.title } : null) || (result.roleDevelopmentEvent ? { type: result.roleDevelopmentEvent.type, title: result.roleDevelopmentEvent.title } : null) || (result.scoutingEvent ? { type: result.scoutingEvent.type, title: result.scoutingEvent.title } : null) || (result.academyEvent ? { type: result.academyEvent.type, title: result.academyEvent.title } : null) || (result.happinessEvent ? { type: result.happinessEvent.type, title: result.happinessEvent.title } : null) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
+    return latestInboxEvent(state, before.inbox) || latestTransferNewsEvent(state, before.news) || (result.managerInteractionEvent ? { type: result.managerInteractionEvent.type, title: result.managerInteractionEvent.title } : null) || (result.europeEvent ? { type: result.europeEvent.type, title: result.europeEvent.title } : null) || (result.cupEvent ? { type: result.cupEvent.type, title: result.cupEvent.title } : null) || (result.boardEvent ? { type: result.boardEvent.type, title: result.boardEvent.title } : null) || (result.loanEvent ? { type: result.loanEvent.type, title: result.loanEvent.title } : null) || (result.pathwayEvent ? { type: result.pathwayEvent.type, title: result.pathwayEvent.title } : null) || (result.roleDevelopmentEvent ? { type: result.roleDevelopmentEvent.type, title: result.roleDevelopmentEvent.title } : null) || (result.scoutingEvent ? { type: result.scoutingEvent.type, title: result.scoutingEvent.title } : null) || (result.academyEvent ? { type: result.academyEvent.type, title: result.academyEvent.title } : null) || (result.happinessEvent ? { type: result.happinessEvent.type, title: result.happinessEvent.title } : null) || (result.clubEvent ? { type: result.clubEvent.type, title: result.clubEvent.title } : null) || (result.aiMarketMove ? { type: "market", title: "Market Activity" } : null) || (result.offer ? { type: "offer", title: "Transfer Offer" } : null);
   }
 
   function simulateUntilNextEvent(state, options) {
@@ -9118,14 +9596,15 @@
     return clubPlayers(state, clubId).reduce((total, player) => total + player.wage, 0);
   }
 
-  function addInbox(state, title, body) {
+  function addInbox(state, title, body, meta) {
     state.inbox.unshift({
       id: `m-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
       title,
       body,
       season: state.season,
       round: state.league.currentRound + 1,
-      read: false
+      read: false,
+      ...(meta || {})
     });
     state.inbox = state.inbox.slice(0, 30);
   }
@@ -9186,6 +9665,7 @@
     state.league.records = state.league.records || {};
     ensureTransferState(state);
     ensureScoutingState(state);
+    ensureManagerInteractionState(state);
     ensureLoanClubsState(state);
     ensureScheduleDates(state);
     if (!hadCalendar && savedRound > 0 && state.league.schedule && state.league.schedule.length) {
@@ -9332,6 +9812,10 @@
     roleDevelopmentReport,
     playerHappinessReport,
     squadHappinessReport,
+    managerInteractionReport,
+    playerInteractionHistory,
+    createManagerInteraction,
+    resolveManagerInteraction,
     youthPathwayReport,
     loanDestinationOptions,
     pathwayPromiseReport,
